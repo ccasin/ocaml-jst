@@ -32,11 +32,8 @@ let scrape_ty env ty =
       | Tconstr (p, _, _) ->
           begin match Env.find_type p env with
           | {type_kind = ( Type_variant (_, Variant_unboxed)
-          | Type_record (_, Record_unboxed _) ); _} -> begin
-              match Typedecl_unboxed.get_unboxed_type_representation env ty with
-              | None -> ty
-              | Some ty2 -> ty2
-          end
+                         | Type_record (_, Record_unboxed _) ); _} ->
+            Ctype.get_unboxed_type_representation env ty
           | _ -> ty
           | exception Not_found -> ty
           end
@@ -65,17 +62,18 @@ let is_base_type env ty base_ty_path =
   | Tconstr(p, _, _) -> Path.same p base_ty_path
   | _ -> false
 
-let is_immediate = function
-  | Type_immediacy.Unknown -> false
-  | Type_immediacy.Always -> true
-  | Type_immediacy.Always_on_64bits ->
-      (* In bytecode, we don't know at compile time whether we are
-         targeting 32 or 64 bits. *)
-      !Clflags.native_code && Sys.word_size = 64
+let is_immediate env ty =
+  let imm : Type_immediacy.t =
+    (* In bytecode, we don't know at compile time whether we are
+       targeting 32 or 64 bits. *)
+    if !Clflags.native_code && Sys.word_size = 64 then Always_on_64bits
+    else Always
+  in
+  Result.is_ok (Ctype.check_type_immediate env ty imm)
 
 let maybe_pointer_type env ty =
   let ty = scrape_ty env ty in
-  if is_immediate (Ctype.immediacy env ty) then Immediate
+  if is_immediate env ty then Immediate
   else Pointer
 
 let maybe_pointer exp = maybe_pointer_type exp.exp_env exp.exp_type
@@ -107,7 +105,7 @@ let classify env ty : classification =
       else begin
         try
           match (Env.find_type p env).type_kind with
-          | Type_abstract ->
+          | Type_abstract _ ->
               Any
           | Type_record _ | Type_variant _ | Type_open ->
               Addr
@@ -186,7 +184,7 @@ let value_kind env ty =
     in
     let scty = scrape_ty env ty in
     match get_desc scty with
-    | _ when is_immediate (Ctype.immediacy env scty) ->
+    | _ when is_immediate env scty ->
       num_nodes_visited, Pintval
     | Tconstr(p, _, _) when Path.same p Predef.path_int ->
       num_nodes_visited, Pintval
@@ -327,7 +325,7 @@ let value_kind env ty =
             | Record_extension _ ->
               num_nodes_visited, Pgenval
           end
-        | Type_abstract | Type_open -> num_nodes_visited, Pgenval
+        | Type_abstract _ | Type_open -> num_nodes_visited, Pgenval
       end
     | Ttuple fields ->
       if cannot_proceed () then

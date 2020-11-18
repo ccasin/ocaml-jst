@@ -857,9 +857,8 @@ and build_as_type_aux ~refine (env : Env.t ref) p =
       end
   | Tpat_constant _ ->
       let mode =
-        match Ctype.immediacy !env p.pat_type with
-        | Always -> Value_mode.newvar ()
-        | Unknown | Always_on_64bits -> p.pat_mode
+        if Ctype.maybe_pointer_type !env p.pat_type then p.pat_mode
+        else Value_mode.newvar ()
       in
       p.pat_type, mode
   | Tpat_any | Tpat_var _
