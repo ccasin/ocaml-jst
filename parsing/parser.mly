@@ -827,6 +827,8 @@ The precedences must be listed from low to high.
 %left     BAR                           /* pattern (p|p|p) */
 %nonassoc below_COMMA
 %left     COMMA                         /* expr/expr_comma_list (e,e,e) */
+%nonassoc below_FUNCTOR                 /* include M */
+%nonassoc FUNCTOR                       /* include functor M */
 %right    MINUSGREATER                  /* function_type (t -> t -> t) */
 %right    OR BARBAR                     /* expr (e || e || e) */
 %right    AMPERSAND AMPERAMPER          /* expr (e && e && e) */
@@ -1509,8 +1511,15 @@ module_binding_body:
 
 (* An [include] statement can appear in a structure or in a signature,
    which is why this definition is parameterized. *)
+include_and_flag:
+  | INCLUDE %prec below_FUNCTOR
+      { None }
+  | INCLUDE FUNCTOR
+      { Some Pincl_functor }
+;
+
 %inline include_statement(thing):
-  INCLUDE
+  flag = include_and_flag
   ext = ext
   attrs1 = attributes
   thing = thing
@@ -1519,7 +1528,7 @@ module_binding_body:
     let attrs = attrs1 @ attrs2 in
     let loc = make_loc $sloc in
     let docs = symbol_docs $sloc in
-    Incl.mk thing ~attrs ~loc ~docs, ext
+    Incl.mk thing ~flag ~attrs ~loc ~docs, ext
   }
 ;
 
@@ -2415,11 +2424,11 @@ comprehension_tail(bracket):
 %inline comprehension_expr:
 | LBRACKET expr comprehension_tail(RBRACKET)
       { Pexp_extension(
-          Extensions.payload_of_extension_expr 
+          Extensions.payload_of_extension_expr
             ~loc:(make_loc $sloc) (Eexp_list_comprehension($2, $3))) }
 | LBRACKETBAR expr comprehension_tail(BARRBRACKET)
       { Pexp_extension(
-          Extensions.payload_of_extension_expr 
+          Extensions.payload_of_extension_expr
             ~loc:(make_loc $sloc) (Eexp_arr_comprehension($2, $3))) }
 ;
 
@@ -2490,7 +2499,7 @@ comprehension_tail(bracket):
       { fst (mktailexp $loc($3) $2) }
   | LBRACKET expr_semi_list error
       { unclosed "[" $loc($1) "]" $loc($3) }
-  | comprehension_expr { $1 } 
+  | comprehension_expr { $1 }
   | od=open_dot_declaration DOT comprehension_expr
       { Pexp_open(od, mkexp ~loc:($loc($3)) $3) }
   | od=open_dot_declaration DOT LBRACKET expr_semi_list RBRACKET

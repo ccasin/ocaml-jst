@@ -470,10 +470,12 @@ module Opn = struct
 end
 
 module Incl = struct
-  let mk ?(loc = !default_loc) ?(attrs = []) ?(docs = empty_docs) mexpr =
+  let mk ?(loc = !default_loc) ?(flag = None) ?(attrs = [])
+        ?(docs = empty_docs) mexpr =
     {
      pincl_mod = mexpr;
      pincl_loc = loc;
+     pincl_flag = flag;
      pincl_attributes = add_docs_attrs docs attrs;
     }
 

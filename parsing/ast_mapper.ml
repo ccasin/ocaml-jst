@@ -49,6 +49,7 @@ type mapper = {
   extension: mapper -> extension -> extension;
   extension_constructor: mapper -> extension_constructor
                          -> extension_constructor;
+  include_flag: mapper -> include_flag -> include_flag;
   include_declaration: mapper -> include_declaration -> include_declaration;
   include_description: mapper -> include_description -> include_description;
   label_declaration: mapper -> label_declaration -> label_declaration;
@@ -663,16 +664,22 @@ let default_mapper =
            ~attrs:(this.attributes this popen_attributes)
       );
 
+    include_flag =
+      (fun _this -> function
+         | Pincl_functor -> Pincl_functor);
+
     include_description =
-      (fun this {pincl_mod; pincl_attributes; pincl_loc} ->
+      (fun this {pincl_mod; pincl_flag; pincl_attributes; pincl_loc} ->
          Incl.mk (this.module_type this pincl_mod)
+           ~flag:(map_opt (this.include_flag this) pincl_flag)
            ~loc:(this.location this pincl_loc)
            ~attrs:(this.attributes this pincl_attributes)
       );
 
     include_declaration =
-      (fun this {pincl_mod; pincl_attributes; pincl_loc} ->
+      (fun this {pincl_mod; pincl_flag; pincl_attributes; pincl_loc} ->
          Incl.mk (this.module_expr this pincl_mod)
+           ~flag:(map_opt (this.include_flag this) pincl_flag)
            ~loc:(this.location this pincl_loc)
            ~attrs:(this.attributes this pincl_attributes)
       );

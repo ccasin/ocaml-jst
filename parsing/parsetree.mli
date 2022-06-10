@@ -829,10 +829,14 @@ and open_declaration = module_expr open_infos
    open M(N).O
    open struct ... end *)
 
+and include_flag =
+  | Pincl_functor
+
 and 'a include_infos =
     {
      pincl_mod: 'a;
      pincl_loc: Location.t;
+     pincl_flag: include_flag option;
      pincl_attributes: attributes;
     }
 
