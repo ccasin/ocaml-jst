@@ -1528,7 +1528,7 @@ include_and_flag:
     let attrs = attrs1 @ attrs2 in
     let loc = make_loc $sloc in
     let docs = symbol_docs $sloc in
-    Incl.mk thing ~flag ~attrs ~loc ~docs, ext
+    Incl.mk flag thing ~attrs ~loc ~docs, ext
   }
 ;
 

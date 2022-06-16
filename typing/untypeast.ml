@@ -641,7 +641,11 @@ let module_substitution sub ms =
 let include_infos f sub incl =
   let loc = sub.location sub incl.incl_loc in
   let attrs = sub.attributes sub incl.incl_attributes in
-  Incl.mk ~loc ~attrs
+  let flags = function
+    | Tincl_functor _ -> Pincl_functor
+  in
+  let flag = Option.map flags incl.incl_flag in
+  Incl.mk ~loc ~attrs flag
     (f sub incl.incl_mod)
 
 let include_declaration sub = include_infos sub.module_expr sub
