@@ -79,6 +79,7 @@ type error =
   | Cannot_eliminate_dependency of module_type
   | Signature_expected
   | Structure_expected of module_type
+  | Functor_expected of module_type
   | With_no_component of Longident.t
   | With_mismatch of Longident.t * Includemod.error list
   | With_makes_applicative_functor_ill_typed of
@@ -129,6 +130,60 @@ let extract_sig_open env loc mty =
   | Mty_alias path ->
       raise(Error(loc, env, Cannot_scrape_alias path))
   | mty -> raise(Error(loc, env, Structure_expected mty))
+
+let debug_print_functor_info mty id mty_param mty2 =
+  printf "\n\nFound functor: \n  %!";
+  Printtyp.modtype Format.std_formatter mty;
+  Format.pp_print_flush Format.std_formatter ();
+  printf "\n Nested Named: %s%!" (Ident.name id);
+  printf "\n Param type:\n  %!";
+  Printtyp.modtype Format.std_formatter mty_param;
+  Format.pp_print_flush Format.std_formatter ();
+  printf "\n Result type:\n  %!";
+  Printtyp.modtype Format.std_formatter mty2;
+  Format.pp_print_flush Format.std_formatter ();
+  printf "\n%!"
+
+let debug_print_coercion coercion =
+  printf "\nI got the coercion:\n  [ %!";
+  List.iter (fun (id,coercion) ->
+    Format.print_string "    ";
+    Ident.print std_formatter id;
+    Format.print_string ", ";
+    Includemod.print_coercion std_formatter coercion;
+    Format.print_string ";\n";
+    Format.pp_print_flush Format.std_formatter ())
+    coercion;
+  printf "  ]\n%!"
+
+let extract_sig_functor_open env loc mty sig_acc =
+  match Env.scrape_alias env mty with
+  | Mty_functor (Named (Some id, mty_param),(Mty_signature sg as mty2)) ->
+      let sig_param =
+        (* Is scrape_alias enough, or do I need some of the logic from
+           Includemod.modtypes.  (and in any case we should do a proper error)
+        *)
+        match Mtype.scrape env mty_param with
+        | Mty_signature sig_param -> sig_param
+        | _ ->
+          fprintf std_formatter
+            "@[functor arg not Mty_sig:@ %a" Printtyp.modtype mty_param;
+          exit 1
+      in
+      debug_print_functor_info mty id mty_param mty2; (* XXX *)
+      let coercion =
+        try
+          Includemod.include_functor_signatures ~mark:Mark_both (* ??? *) env
+            (List.rev sig_acc) sig_param
+        with e -> raise e (* error message later *)
+      in
+      debug_print_coercion coercion;
+      (sg, (* This has references to the functor parameter that I need to do
+              something about. Or do I want the whole mty_functor? *)
+       coercion)
+  | Mty_alias path ->
+      raise(Error(loc, env, Cannot_scrape_alias path))
+  | mty -> raise(Error(loc, env, Functor_expected mty))
 
 (* Compute the environment after opening a module *)
 
@@ -1411,6 +1466,7 @@ and transl_signature env sg =
             let incl =
               { incl_mod = tmty;
                 incl_type = sg;
+                incl_flag = None; (* XXX *)
                 incl_attributes = sincl.pincl_attributes;
                 incl_loc = sincl.pincl_loc;
               }
@@ -1968,6 +2024,10 @@ and type_module_aux ~alias sttn funct_body anchor env smod =
         mod_loc = smod.pmod_loc }
   | Pmod_apply(sfunct, sarg) ->
       let arg = type_module true funct_body None env sarg in
+      printf "Inferred module type for argument:\n%!";
+      Printtyp.modtype std_formatter arg.mod_type;
+      Format.pp_print_flush std_formatter ();
+      printf "\nDone apply debug\n%!";
       let path = path_of_module arg in
       let funct =
         type_module (sttn && path <> None) funct_body None env sfunct in
@@ -2155,7 +2215,7 @@ and type_open_decl_aux ?used_slot ?toplevel funct_body names env od =
 and type_structure ?(toplevel = false) funct_body anchor env sstr =
   let names = Signature_names.create () in
 
-  let type_str_item env {pstr_loc = loc; pstr_desc = desc} =
+  let type_str_item env {pstr_loc = loc; pstr_desc = desc} sig_acc =
     match desc with
     | Pstr_eval (sexpr, attrs) ->
         let expr =
@@ -2427,14 +2487,40 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
           Builtin_attributes.warning_scope sincl.pincl_attributes
             (fun () -> type_module true funct_body None env smodl)
         in
+        printf "%!\nthe modl is :\n%!";
+        Printtyped.module_expr 0 Format.std_formatter modl;
+        Format.pp_print_flush Format.std_formatter ();
+
+        let flag, sg =
+          match sincl.pincl_flag with
+          | None ->
+              None, extract_sig_open env smodl.pmod_loc modl.mod_type
+          | Some Pincl_functor ->
+              let (sg, coercion) =
+                extract_sig_functor_open env smodl.pmod_loc modl.mod_type
+                  sig_acc
+              in
+              Some (Tincl_functor coercion), sg
+        in
+
+        printf "%!\nthe sg (1) is :\n%!";
+        Printtyp.signature Format.std_formatter sg;
+        Format.pp_print_flush Format.std_formatter ();
+
         let scope = Ctype.create_scope () in
         (* Rename all identifiers bound by this signature to avoid clashes *)
-        let sg, new_env = Env.enter_signature ~scope
-            (extract_sig_open env smodl.pmod_loc modl.mod_type) env in
+        let sg, new_env = Env.enter_signature ~scope sg env in
         List.iter (Signature_names.check_sig_item names loc) sg;
+
+        printf "%!\nthe sg (2) is :\n%!";
+        Printtyp.signature Format.std_formatter sg;
+        Format.pp_print_flush Format.std_formatter ();
+        printf "\n\n%!";
+
         let incl =
           { incl_mod = modl;
             incl_type = sg;
+            incl_flag = flag;
             incl_attributes = sincl.pincl_attributes;
             incl_loc = sincl.pincl_loc;
           }
@@ -2446,21 +2532,20 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
         Builtin_attributes.parse_standard_implementation_attributes attr;
         Tstr_attribute attr, [], env
   in
-  let rec type_struct env sstr =
+  let rec type_struct env sstr str_acc sig_acc =
     match sstr with
-    | [] -> ([], [], env)
+    | [] -> (List.rev str_acc, List.rev sig_acc, env)
     | pstr :: srem ->
         let previous_saved_types = Cmt_format.get_saved_types () in
-        let desc, sg, new_env = type_str_item env pstr in
+        let desc, sg, new_env = type_str_item env pstr sig_acc in
         let str = { str_desc = desc; str_loc = pstr.pstr_loc; str_env = env } in
         Cmt_format.set_saved_types (Cmt_format.Partial_structure_item str
                                     :: previous_saved_types);
-        let (str_rem, sig_rem, final_env) = type_struct new_env srem in
-        (str :: str_rem, sg @ sig_rem, final_env)
+        type_struct new_env srem (str :: str_acc) (List.rev sg @ sig_acc)
   in
   let previous_saved_types = Cmt_format.get_saved_types () in
   let run () =
-    let (items, sg, final_env) = type_struct env sstr in
+    let (items, sg, final_env) = type_struct env sstr [] [] in
     let str = { str_items = items; str_type = sg; str_final_env = final_env } in
     Cmt_format.set_saved_types
       (Cmt_format.Partial_structure str :: previous_saved_types);
@@ -2857,6 +2942,9 @@ let report_error ppf = function
   | Structure_expected mty ->
       fprintf ppf
         "@[This module is not a structure; it has type@ %a" modtype mty
+  | Functor_expected mty ->
+      fprintf ppf
+        "@[This module is not a functor; it has type@ %a" modtype mty
   | With_no_component lid ->
       fprintf ppf
         "@[The signature constrained by `with' has no component named %a@]"
