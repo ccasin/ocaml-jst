@@ -258,6 +258,7 @@ and nondep_modtype_decl env ids mtd =
   {mtd with mtd_type = Option.map (nondep_mty env Strict ids) mtd.mtd_type}
 
 let nondep_supertype env ids = nondep_mty env Co ids
+let nondep_sig env ids = nondep_sig env Co ids
 let nondep_sig_item env ids = nondep_sig_item env Co ids
 
 let enrich_typedecl env p id decl =
