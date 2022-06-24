@@ -34,6 +34,14 @@ val strengthen: aliasable:bool -> Env.t -> module_type -> Path.t -> module_type
            given path. *)
 val strengthen_decl:
   aliasable:bool -> Env.t -> module_declaration -> Path.t -> module_declaration
+
+val sig_make_manifest : signature -> signature
+        (* Make abstract types manifest.  Similar to strengthening, but rather
+           than providing definitions by making the name of the current module
+           explicit, simply create new identifiers with the same string part as
+           the originals and assume they are defined in the context in which
+           this signature appears.  *)
+
 val nondep_supertype: Env.t -> Ident.t list -> module_type -> module_type
         (* Return the smallest supertype of the given type
            in which none of the given idents appears.
