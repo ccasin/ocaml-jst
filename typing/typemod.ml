@@ -76,6 +76,7 @@ type hiding_error =
 type error =
     Cannot_apply of module_type
   | Not_included of Includemod.error list
+  | Not_included_functor of Includemod.error list
   | Cannot_eliminate_dependency of module_type
   | Signature_expected
   | Structure_expected of module_type
@@ -135,7 +136,7 @@ let extract_sig_open env loc mty =
 
 let extract_sig_functor_open env loc mty sig_acc =
   match Env.scrape_alias env mty with
-  | Mty_functor (Named (Some param, mty_param),Mty_signature sg) ->
+  | Mty_functor (Named (Some param, mty_param),Mty_signature sg) as mty_func ->
       let sig_param =
         match Mtype.scrape env mty_param with
         | Mty_signature sig_param -> sig_param
@@ -147,13 +148,15 @@ let extract_sig_functor_open env loc mty sig_acc =
         try
           Includemod.include_functor_signatures ~mark:Mark_both (* ??? *) env
             (List.rev sig_acc) sig_param
-        with e -> raise e (* error message later *)
+        with Includemod.Error msg ->
+          raise (Error(loc, env, Not_included_functor msg))
       in
       (* Like the [Pmod_apply] case, we want to use [nondep_supertype] to
          eliminate references to the functor's parameter in its result type.
          Unlike that case, we don't have an actual parameter, just the previous
-         contents of the module currently being checked.  So we first create
-         definitions for the parameter's types with [sig_make_manifest]. *)
+         contents of the module currently being checked.  So we create
+         definitions for the parameter's types with [sig_make_manifest] before
+         the call to [nondep_sig]. *)
       let sig_param = Mtype.sig_make_manifest sig_acc in
       let env =
         Env.add_module ~arg:true (* ?? *) param Mp_present (* ?? *)
@@ -161,7 +164,8 @@ let extract_sig_functor_open env loc mty sig_acc =
       in
       let sg =
         try Mtype.nondep_sig env [param] sg
-        with e -> raise e (* error message later *)
+        with Ctype.Nondep_cannot_erase _ ->
+          raise(Error(loc, env, Cannot_eliminate_dependency mty_func))
       in
       (sg, coercion)
   | Mty_alias path -> raise(Error(loc, env, Cannot_scrape_alias path))
@@ -1436,13 +1440,10 @@ and transl_signature env sg =
         let scope = Ctype.create_scope () in
         let flag, sg =
           match sincl.pincl_flag with
-          | None ->
-              None, extract_sig env smty.pmty_loc mty
+          | None -> None, extract_sig env smty.pmty_loc mty
           | Some Pincl_functor ->
             let (sg, coercion) =
-              (* XXX parameter for type vs struct *)
-              extract_sig_functor_open env smty.pmty_loc mty
-                sig_acc
+              extract_sig_functor_open env smty.pmty_loc mty sig_acc
             in
             Some (Tincl_functor coercion), sg
         in
@@ -2477,17 +2478,9 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
           Builtin_attributes.warning_scope sincl.pincl_attributes
             (fun () -> type_module true funct_body None env smodl)
         in
-
-        if not !Clflags.real_paths then begin
-          printf "%!\nthe modl is :\n%!";
-          Printtyped.module_expr 0 Format.std_formatter modl;
-          Format.pp_print_flush Format.std_formatter ()
-        end;
-
         let flag, sg =
           match sincl.pincl_flag with
-          | None ->
-              None, extract_sig_open env smodl.pmod_loc modl.mod_type
+          | None -> None, extract_sig_open env smodl.pmod_loc modl.mod_type
           | Some Pincl_functor ->
               let (sg, coercion) =
                 extract_sig_functor_open env smodl.pmod_loc modl.mod_type
@@ -2495,25 +2488,10 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
               in
               Some (Tincl_functor coercion), sg
         in
-
-        if not !Clflags.real_paths then begin
-          printf "%!\nthe sg (1) is :\n%!";
-          Printtyp.signature Format.std_formatter sg;
-          Format.pp_print_flush Format.std_formatter ()
-        end;
-
         let scope = Ctype.create_scope () in
         (* Rename all identifiers bound by this signature to avoid clashes *)
         let sg, new_env = Env.enter_signature ~scope sg env in
         List.iter (Signature_names.check_sig_item names loc) sg;
-
-        if not !Clflags.real_paths then begin
-          printf "%!\nthe sg (2) is :\n%!";
-          Printtyp.signature Format.std_formatter sg;
-          Format.pp_print_flush Format.std_formatter ();
-          printf "\n\n%!"
-        end;
-
         let incl =
           { incl_mod = modl;
             incl_type = sg;
@@ -2930,6 +2908,9 @@ let report_error ppf = function
   | Not_included errs ->
       fprintf ppf
         "@[<v>Signature mismatch:@ %a@]" Includemod.report_error errs
+  | Not_included_functor errs ->
+      fprintf ppf
+        "@[<v>Signature mismatch in included functor's parameter:@ %a@]" Includemod.report_error errs
   | Cannot_eliminate_dependency mty ->
       fprintf ppf
         "@[This functor has type@ %a@ \

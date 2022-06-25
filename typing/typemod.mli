@@ -105,6 +105,7 @@ type hiding_error =
 type error =
     Cannot_apply of module_type
   | Not_included of Includemod.error list
+  | Not_included_functor of Includemod.error list
   | Cannot_eliminate_dependency of module_type
   | Signature_expected
   | Structure_expected of module_type
