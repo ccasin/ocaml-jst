@@ -766,7 +766,6 @@ and transl_structure ~scopes loc fields cc rootpath final_env = function
       | Tstr_include incl ->
           let ids = bound_value_identifiers incl.incl_type in
           let modl = incl.incl_mod in
-          let incl_loc = of_location ~scopes incl.incl_loc in
           let mid = Ident.create_local "include" in
           let rec rebind_idents pos newfields = function
               [] ->
@@ -786,28 +785,8 @@ and transl_structure ~scopes loc fields cc rootpath final_env = function
             match incl.incl_flag with
             | None -> transl_module ~scopes Tcoerce_none None modl
             | Some (Tincl_functor name_cc_list) ->
-              let inlined_attribute, modl =
-                Translattribute.get_and_remove_inlined_attribute_on_module modl
-              in
-              let modl = transl_module ~scopes Tcoerce_none None modl in
-              let param =
-                Lprim(Pmakeblock(0, Immutable, None, alloc_heap),
-                      List.map (fun (name, cc) ->
-                        apply_coercion incl_loc Strict cc (Lvar name))
-                        name_cc_list,
-                      incl_loc)
-              in
-              Lapply {
-                ap_loc = incl_loc; (* or do I want to get this out of modl? *)
-                ap_func = modl;
-                ap_args = [param];
-                ap_region_close=Rc_normal; (* ?? *)
-                ap_mode = alloc_heap;
-                ap_tailcall = Default_tailcall;
-                ap_inlined = inlined_attribute;
-                ap_specialised = Default_specialise;
-                ap_probe = None;}
-          (* build the argument make a block where each item has the coercion applied, build an lapply *)
+              transl_include_functor modl name_cc_list scopes
+                (of_location ~scopes incl.incl_loc)
           in
           Llet(let_kind, Pgenval, mid, modl, body),
           size
@@ -845,6 +824,30 @@ and transl_structure ~scopes loc fields cc rootpath final_env = function
       | Tstr_class_type _
       | Tstr_attribute _ ->
           transl_structure ~scopes loc fields cc rootpath final_env rem
+
+(* construct functor application in "include functor" case *)
+and transl_include_functor modl coercion scopes loc =
+  let inlined_attribute, modl =
+    Translattribute.get_and_remove_inlined_attribute_on_module modl
+  in
+  let modl = transl_module ~scopes Tcoerce_none None modl in
+  let param =
+    Lprim(Pmakeblock(0, Immutable, None, alloc_heap),
+          List.map (fun (name, cc) ->
+            apply_coercion loc Strict cc (Lvar name))
+            coercion,
+          loc)
+  in
+  Lapply {
+    ap_loc = loc;
+    ap_func = modl;
+    ap_args = [param];
+    ap_region_close=Rc_normal; (* ?? *)
+    ap_mode = alloc_heap;
+    ap_tailcall = Default_tailcall;
+    ap_inlined = inlined_attribute;
+    ap_specialised = Default_specialise;
+    ap_probe = None;}
 
 (* Update forward declaration in Translcore *)
 let _ =
@@ -1303,7 +1306,6 @@ let transl_store_structure ~scopes glob map prims aliases str =
             in
             Lsequence(lam, loop ids0 map)
         | Tstr_include incl ->
-          (* XXX *)
             let ids = bound_value_identifiers incl.incl_type in
             let modl = incl.incl_mod in
             let mid = Ident.create_local "include" in
@@ -1318,45 +1320,11 @@ let transl_store_structure ~scopes glob map prims aliases str =
                                  store_idents (pos + 1) idl))
             in
             let modl =
-              (* XXX factor this out, if it is indeed supposed to look as
-                 similar to what I've done in the first one *)
               match incl.incl_flag with
               | None -> transl_module ~scopes Tcoerce_none None modl
               | Some (Tincl_functor name_cc_list) ->
-                let inlined_attribute, modl =
-                  Translattribute.get_and_remove_inlined_attribute_on_module modl
-                in
-                let modl = transl_module ~scopes Tcoerce_none None modl in
-                let param =
-                  Lprim(Pmakeblock(0, Immutable, None, alloc_heap),
-                        List.map (fun (name, cc) ->
-                          match cc with
-                          (* XXX This is copied from the Tcoerce_structure part of
-                             the base case of this function.  I'm not totally
-                             clear on what the primitive case is doing.  Also
-                             perhaps we should pull some of this out into a helper
-                          *)
-                          | Tcoerce_primitive p ->
-                              let loc = of_location ~scopes p.pc_loc in
-                              let poly_mode =
-                                Translcore.transl_alloc_mode p.pc_poly_mode
-                              in
-                              Translprim.transl_primitive
-                                loc p.pc_desc p.pc_env p.pc_type ~poly_mode None
-                          | _ -> apply_coercion loc Strict cc (Lvar name))
-                          name_cc_list,
-                        loc)
-                in
-                Lapply {
-                  ap_loc = loc;
-                  ap_func = modl;
-                  ap_args = [param];
-                  ap_region_close = Rc_normal;
-                  ap_mode = alloc_heap;
-                  ap_tailcall = Default_tailcall;
-                  ap_inlined = inlined_attribute;
-                  ap_specialised = Default_specialise;
-                  ap_probe = None;}
+                transl_include_functor modl name_cc_list scopes
+                  (of_location ~scopes incl.incl_loc)
             in
             Llet(Strict, Pgenval, mid,
                  Lambda.subst no_env_update subst modl,
@@ -1683,10 +1651,14 @@ let transl_toplevel_item ~scopes item =
         in
         Lletrec(class_bindings, body)
   | Tstr_include incl ->
-    (* XXX *)
-      let () = Printf.printf "Got to next one\n" in
       let ids = bound_value_identifiers incl.incl_type in
-      let modl = incl.incl_mod in
+      let modl =
+        match incl.incl_flag with
+        | None -> transl_module ~scopes Tcoerce_none None incl.incl_mod
+        | Some (Tincl_functor name_cc_list) ->
+          transl_include_functor incl.incl_mod name_cc_list scopes
+            (of_location ~scopes incl.incl_loc)
+      in
       let mid = Ident.create_local "include" in
       let rec set_idents pos = function
         [] ->
@@ -1695,8 +1667,7 @@ let transl_toplevel_item ~scopes item =
           Lsequence(toploop_setvalue id
                       (Lprim(mod_field pos, [Lvar mid], Loc_unknown)),
                     set_idents (pos + 1) ids) in
-      Llet(Strict, Pgenval, mid,
-           transl_module ~scopes Tcoerce_none None modl, set_idents 0 ids)
+      Llet(Strict, Pgenval, mid, modl, set_idents 0 ids)
   | Tstr_primitive descr ->
       record_primitive descr.val_val;
       lambda_unit
