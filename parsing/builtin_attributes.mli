@@ -100,4 +100,4 @@ val has_nonlocal: Parsetree.attributes -> bool
    are present despite the extension being disabled *)
 val has_local: Parsetree.attributes -> (bool,unit) result
 
-val has_include_functor : Parsetree.attributes -> bool
+val has_include_functor : Parsetree.attributes -> (bool,unit) result

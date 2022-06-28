@@ -110,6 +110,7 @@ type error =
   | Badly_formed_signature of string * Typedecl.error
   | Cannot_hide_id of hiding_error
   | Invalid_type_subst_rhs
+  | Unsupported_extension of Clflags.Extension.t
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -174,6 +175,14 @@ let extract_sig_functor_open env loc mty sig_acc =
       (sg, coercion)
   | Mty_alias path -> raise(Error(loc, env, Cannot_scrape_alias path))
   | mty -> raise(Error(loc, env, Functor_expected mty))
+
+(* Check for include functor, and error if it's not enabled *)
+let has_include_functor env loc attrs =
+  match Builtin_attributes.has_include_functor attrs with
+  | Error () ->
+      raise(Error (loc, env,
+                   Unsupported_extension Clflags.Extension.Include_functor))
+  | Ok b -> b
 
 (* Compute the environment after opening a module *)
 
@@ -867,8 +876,9 @@ and approx_sig env ssg =
           let _, env = type_open_descr env sod in
           approx_sig env srem
       | Psig_include sincl ->
-          if Builtin_attributes.has_include_functor sincl.pincl_attributes then
-            raise (Error(sincl.pincl_loc, env, Recursive_include_functor));
+          let sloc = sincl.pincl_loc in
+          if has_include_functor env sloc sincl.pincl_attributes then
+            raise (Error(sloc, env, Recursive_include_functor));
           let smty = sincl.pincl_mod in
           let mty = approx_modtype env smty in
           let scope = Ctype.create_scope () in
@@ -1432,6 +1442,7 @@ and transl_signature env sg =
         mksig (Tsig_open od) env loc, [], newenv
     | Psig_include sincl ->
         let smty = sincl.pincl_mod in
+        let sloc = sincl.pincl_loc in
         let tmty =
           Builtin_attributes.warning_scope sincl.pincl_attributes
             (fun () -> transl_modtype env smty)
@@ -1439,7 +1450,7 @@ and transl_signature env sg =
         let mty = tmty.mty_type in
         let scope = Ctype.create_scope () in
         let flag, sg =
-          if Builtin_attributes.has_include_functor sincl.pincl_attributes then
+          if has_include_functor env sloc sincl.pincl_attributes then
             let (sg, coercion) =
               extract_sig_functor_open env smty.pmty_loc mty sig_acc
             in
@@ -1454,7 +1465,7 @@ and transl_signature env sg =
             incl_type = sg;
             incl_flag = flag;
             incl_attributes = sincl.pincl_attributes;
-            incl_loc = sincl.pincl_loc;
+            incl_loc = sloc;
           }
         in
         mksig (Tsig_include incl) env loc, sig_types, newenv
@@ -2468,12 +2479,13 @@ and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
         new_env
     | Pstr_include sincl ->
         let smodl = sincl.pincl_mod in
+        let sloc = sincl.pincl_loc in
         let modl =
           Builtin_attributes.warning_scope sincl.pincl_attributes
             (fun () -> type_module true funct_body None env smodl)
         in
         let flag, sg =
-          if Builtin_attributes.has_include_functor sincl.pincl_attributes then
+          if has_include_functor env sloc sincl.pincl_attributes then
             let (sg, coercion) =
               extract_sig_functor_open env smodl.pmod_loc modl.mod_type sig_acc
             in
@@ -2490,7 +2502,7 @@ and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
             incl_type = sg;
             incl_flag = flag;
             incl_attributes = sincl.pincl_attributes;
-            incl_loc = sincl.pincl_loc;
+            incl_loc = sloc;
           }
         in
         Tstr_include incl, sg, new_env
@@ -3048,6 +3060,11 @@ let report_error ppf = function
         Ident.print opened_item_id
   | Invalid_type_subst_rhs ->
       fprintf ppf "Only type synonyms are allowed on the right of :="
+  | Unsupported_extension ext ->
+      let ext = Clflags.Extension.to_string ext in
+      fprintf ppf "@[The %s extension is disabled@ \
+                   To enable it, pass the '-extension %s' flag@]" ext ext
+
 
 let report_error env ppf err =
   Printtyp.wrap_printing_env ~error:true env (fun () -> report_error ppf err)

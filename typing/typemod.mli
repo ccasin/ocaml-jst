@@ -139,6 +139,7 @@ type error =
   | Badly_formed_signature of string * Typedecl.error
   | Cannot_hide_id of hiding_error
   | Invalid_type_subst_rhs
+  | Unsupported_extension of Clflags.Extension.t
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error

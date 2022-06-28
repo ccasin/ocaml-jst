@@ -1,4 +1,5 @@
 (* TEST
+  flags = "-extension include_functor"
    * expect
 *)
 
@@ -220,7 +221,7 @@ Line 8, characters 18-21:
 Error: This functor has type
        functor (X : Set.OrderedType) -> sig val s : Set.Make(X).t end
        The parameter cannot be eliminated in the result type.
-       This functor can't be included; please create an explicit argument.
+       This functor can't be included directly; please apply it to an explicit argument.
 |}];;
 
 (* Test 11: Include functor should work at the toplevel. *)
@@ -301,5 +302,5 @@ module type F13 = functor (X : S) -> S13
 Line 8, characters 2-21:
 8 |   include functor F13
       ^^^^^^^^^^^^^^^^^^^
-Error: Including a functor is not supported in recursive modules
+Error: Including a functor is not supported in recursive module signatures
 |}];;
