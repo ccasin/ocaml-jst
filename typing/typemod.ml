@@ -2012,13 +2012,6 @@ and type_module_aux ~alias sttn funct_body anchor env smod =
         mod_loc = smod.pmod_loc }
   | Pmod_apply(sfunct, sarg) ->
       let arg = type_module true funct_body None env sarg in
-      if not !Clflags.real_paths then
-        begin
-          printf "Inferred module type for argument:\n%!";
-          Printtyp.modtype std_formatter arg.mod_type;
-          Format.pp_print_flush std_formatter ();
-          printf "\nDone apply debug\n%!";
-        end;
       let path = path_of_module arg in
       let funct =
         type_module (sttn && path <> None) funct_body None env sfunct in
