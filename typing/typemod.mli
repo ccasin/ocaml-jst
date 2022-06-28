@@ -32,10 +32,10 @@ end
 val type_module:
         Env.t -> Parsetree.module_expr -> Typedtree.module_expr
 val type_structure:
-  Env.t -> Parsetree.structure ->
+  Env.t -> Types.signature -> Parsetree.structure ->
   Typedtree.structure * Types.signature * Signature_names.t * Env.t
 val type_toplevel_phrase:
-  Env.t -> Parsetree.structure ->
+  Env.t -> Types.signature -> Parsetree.structure ->
   Typedtree.structure * Types.signature * Signature_names.t * Env.t
 val type_implementation:
   string -> string -> string -> Env.t -> Parsetree.structure ->
@@ -102,11 +102,15 @@ type hiding_error =
       user_loc: Location.t;
     }
 
+type functor_dependency_error =
+    Functor_applied
+  | Functor_included
+
 type error =
     Cannot_apply of module_type
   | Not_included of Includemod.error list
   | Not_included_functor of Includemod.error list
-  | Cannot_eliminate_dependency of module_type
+  | Cannot_eliminate_dependency of (functor_dependency_error * module_type)
   | Signature_expected
   | Structure_expected of module_type
   | Functor_expected of module_type

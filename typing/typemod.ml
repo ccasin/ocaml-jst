@@ -73,11 +73,15 @@ type hiding_error =
       user_loc: Location.t;
     }
 
+type functor_dependency_error =
+    Functor_applied
+  | Functor_included
+
 type error =
     Cannot_apply of module_type
   | Not_included of Includemod.error list
   | Not_included_functor of Includemod.error list
-  | Cannot_eliminate_dependency of module_type
+  | Cannot_eliminate_dependency of (functor_dependency_error * module_type)
   | Signature_expected
   | Structure_expected of module_type
   | Functor_expected of module_type
@@ -146,7 +150,7 @@ let extract_sig_functor_open env loc mty sig_acc =
       in
       let coercion =
         try
-          Includemod.include_functor_signatures ~mark:Mark_both (* ??? *) env
+          Includemod.include_functor_signatures ~mark:Mark_both env
             (List.rev sig_acc) sig_param
         with Includemod.Error msg ->
           raise (Error(loc, env, Not_included_functor msg))
@@ -159,13 +163,13 @@ let extract_sig_functor_open env loc mty sig_acc =
          the call to [nondep_sig]. *)
       let sig_param = Mtype.sig_make_manifest sig_acc in
       let env =
-        Env.add_module ~arg:true (* ?? *) param Mp_present (* ?? *)
-          (Mty_signature sig_param) env
+        Env.add_module ~arg:true param Mp_present (Mty_signature sig_param) env
       in
       let sg =
         try Mtype.nondep_sig env [param] sg
         with Ctype.Nondep_cannot_erase _ ->
-          raise(Error(loc, env, Cannot_eliminate_dependency mty_func))
+          raise(Error(loc, env, Cannot_eliminate_dependency
+                                  (Functor_included, mty_func)))
       in
       (sg, coercion)
   | Mty_alias path -> raise(Error(loc, env, Cannot_scrape_alias path))
@@ -863,12 +867,8 @@ and approx_sig env ssg =
           let _, env = type_open_descr env sod in
           approx_sig env srem
       | Psig_include sincl ->
-          let () =
-            match sincl.pincl_flag with
-            | Some Pincl_functor ->
-              raise (Error(sincl.pincl_loc, env, Recursive_include_functor))
-            | None -> ()
-          in
+          if Builtin_attributes.has_include_functor sincl.pincl_attributes then
+            raise (Error(sincl.pincl_loc, env, Recursive_include_functor));
           let smty = sincl.pincl_mod in
           let mty = approx_modtype env smty in
           let scope = Ctype.create_scope () in
@@ -1439,13 +1439,13 @@ and transl_signature env sg =
         let mty = tmty.mty_type in
         let scope = Ctype.create_scope () in
         let flag, sg =
-          match sincl.pincl_flag with
-          | None -> None, extract_sig env smty.pmty_loc mty
-          | Some Pincl_functor ->
+          if Builtin_attributes.has_include_functor sincl.pincl_attributes then
             let (sg, coercion) =
               extract_sig_functor_open env smty.pmty_loc mty sig_acc
             in
             Some (Tincl_functor coercion), sg
+          else
+            None, extract_sig env smty.pmty_loc mty
         in
         let sig_types, newenv = Env.enter_signature ~scope sg env in
         List.iter (Signature_names.check_sig_item names item.psig_loc) sig_types;
@@ -1965,7 +1965,7 @@ and type_module_aux ~alias sttn funct_body anchor env smod =
       end
   | Pmod_structure sstr ->
       let (str, sg, names, _finalenv) =
-        type_structure funct_body anchor env sstr in
+        type_structure funct_body anchor env [] sstr in
       let md =
         { mod_desc = Tmod_structure str;
           mod_type = Mty_signature sg;
@@ -2064,7 +2064,8 @@ and type_module_aux ~alias sttn funct_body anchor env smod =
                       try env, Mtype.nondep_supertype env [param] mty_res
                       with Ctype.Nondep_cannot_erase _ ->
                         raise(Error(smod.pmod_loc, env,
-                                    Cannot_eliminate_dependency mty_functor))
+                                    Cannot_eliminate_dependency
+                                      (Functor_applied, mty_functor)))
                 in
                 begin match
                   Includemod.modtypes ~mark:Mark_neither
@@ -2203,7 +2204,7 @@ and type_open_decl_aux ?used_slot ?toplevel funct_body names env od =
     } in
     open_descr, sg, newenv
 
-and type_structure ?(toplevel = false) funct_body anchor env sstr =
+and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
   let names = Signature_names.create () in
 
   let type_str_item env {pstr_loc = loc; pstr_desc = desc} sig_acc =
@@ -2479,14 +2480,13 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
             (fun () -> type_module true funct_body None env smodl)
         in
         let flag, sg =
-          match sincl.pincl_flag with
-          | None -> None, extract_sig_open env smodl.pmod_loc modl.mod_type
-          | Some Pincl_functor ->
-              let (sg, coercion) =
-                extract_sig_functor_open env smodl.pmod_loc modl.mod_type
-                  sig_acc
-              in
-              Some (Tincl_functor coercion), sg
+          if Builtin_attributes.has_include_functor sincl.pincl_attributes then
+            let (sg, coercion) =
+              extract_sig_functor_open env smodl.pmod_loc modl.mod_type sig_acc
+            in
+            Some (Tincl_functor coercion), sg
+          else
+            None, extract_sig_open env smodl.pmod_loc modl.mod_type
         in
         let scope = Ctype.create_scope () in
         (* Rename all identifiers bound by this signature to avoid clashes *)
@@ -2509,7 +2509,11 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
   in
   let rec type_struct env sstr str_acc sig_acc =
     match sstr with
-    | [] -> (List.rev str_acc, List.rev sig_acc, env)
+    | [] ->
+      let sig_acc =
+        Misc.take sig_acc (List.length sig_acc - List.length toplevel_sig)
+      in
+      (List.rev str_acc, List.rev sig_acc, env)
     | pstr :: srem ->
         let previous_saved_types = Cmt_format.get_saved_types () in
         let desc, sg, new_env = type_str_item env pstr sig_acc in
@@ -2520,7 +2524,7 @@ and type_structure ?(toplevel = false) funct_body anchor env sstr =
   in
   let previous_saved_types = Cmt_format.get_saved_types () in
   let run () =
-    let (items, sg, final_env) = type_struct env sstr [] [] in
+    let (items, sg, final_env) = type_struct env sstr [] toplevel_sig in
     let str = { str_items = items; str_type = sg; str_final_env = final_env } in
     Cmt_format.set_saved_types
       (Cmt_format.Partial_structure str :: previous_saved_types);
@@ -2542,12 +2546,12 @@ let remove_mode_variables_for_toplevel str =
      Ctype.remove_mode_variables exp.exp_type
   | _ -> ()
 
-let type_toplevel_phrase env s =
+let type_toplevel_phrase env sig_acc s =
   Env.reset_required_globals ();
   Env.reset_probes ();
   Typecore.reset_allocations ();
   let (str, sg, to_remove_from_sg, env) =
-    type_structure ~toplevel:true false None env s in
+    type_structure ~toplevel:true false None env sig_acc s in
   remove_mode_variables env sg;
   remove_mode_variables_for_toplevel str;
   Typecore.optimise_allocations ();
@@ -2732,7 +2736,7 @@ let type_implementation sourcefile outputprefix modulename initial_env ast =
       if !Clflags.print_types then (* #7656 *)
         Warnings.parse_options false "-32-34-37-38-60";
       let (str, sg, names, finalenv) =
-        type_structure initial_env ast in
+        type_structure initial_env [] ast in
       let simple_sg = Signature_names.simplify finalenv names sg in
       if !Clflags.print_types then begin
         Typecore.force_delayed_checks ();
@@ -2911,11 +2915,17 @@ let report_error ppf = function
   | Not_included_functor errs ->
       fprintf ppf
         "@[<v>Signature mismatch in included functor's parameter:@ %a@]" Includemod.report_error errs
-  | Cannot_eliminate_dependency mty ->
+  | Cannot_eliminate_dependency (dep_type, mty) ->
+      let hint =
+        match dep_type with
+        | Functor_applied -> "Please bind the argument to a module identifier"
+        | Functor_included -> "This functor can't be included; please create \
+                               an explicit argument"
+      in
       fprintf ppf
         "@[This functor has type@ %a@ \
            The parameter cannot be eliminated in the result type.@ \
-           Please bind the argument to a module identifier.@]" modtype mty
+           %s.@]" modtype mty hint
   | Signature_expected -> fprintf ppf "This module type is not a signature"
   | Structure_expected mty ->
       fprintf ppf

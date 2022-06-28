@@ -426,3 +426,6 @@ let check_local ext_names other_names attr =
 
 let has_local attr =
   check_local ["extension.local"] ["ocaml.local"; "local"] attr
+
+let has_include_functor attr =
+  List.exists (check ["extension.include_functor"]) attr

@@ -732,7 +732,6 @@ and signature_item i ppf x =
       attributes i ppf od.popen_attributes
   | Psig_include incl ->
       line i ppf "Psig_include\n";
-      option i pincl_flag ppf incl.pincl_flag;
       module_type i ppf incl.pincl_mod;
       attributes i ppf incl.pincl_attributes
   | Psig_class (l) ->
@@ -847,7 +846,6 @@ and structure_item i ppf x =
       list i class_type_declaration ppf l;
   | Pstr_include incl ->
       line i ppf "Pstr_include";
-      option i pincl_flag ppf incl.pincl_flag;
       attributes i ppf incl.pincl_attributes;
       module_expr i ppf incl.pincl_mod
   | Pstr_extension ((s, arg), attrs) ->
@@ -866,9 +864,6 @@ and module_binding i ppf x =
   str_opt_loc i ppf x.pmb_name;
   attributes i ppf x.pmb_attributes;
   module_expr (i+1) ppf x.pmb_expr
-
-and pincl_flag i ppf = function
-  | Pincl_functor -> line i ppf "Pincl_functor\n"
 
 and core_type_x_core_type_x_location i ppf (ct1, ct2, l) =
   line i ppf "<constraint> %a\n" fmt_location l;
