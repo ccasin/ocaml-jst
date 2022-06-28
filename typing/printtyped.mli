@@ -21,6 +21,3 @@ val implementation : formatter -> structure -> unit;;
 
 val implementation_with_coercion :
     formatter -> (structure * module_coercion) -> unit;;
-
-(* XXX DEBUG *)
-val module_expr : int -> formatter -> module_expr -> unit;;

@@ -780,7 +780,7 @@ and transl_structure ~scopes loc fields cc rootpath final_env = function
                 size
           in
           let body, size = rebind_idents 0 fields ids in
-          let let_kind = pure_module modl in (* XXX is this right in the functor case? *)
+          let let_kind = pure_module modl in
           let modl =
             match incl.incl_flag with
             | None -> transl_module ~scopes Tcoerce_none None modl

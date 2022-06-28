@@ -139,6 +139,8 @@ let extract_sig_open env loc mty =
       raise(Error(loc, env, Cannot_scrape_alias path))
   | mty -> raise(Error(loc, env, Structure_expected mty))
 
+(* Extract the signature of a functor's body, using the provided [sig_acc]
+   signature to fill in names from its parameter *)
 let extract_sig_functor_open env loc mty sig_acc =
   match Env.scrape_alias env mty with
   | Mty_functor (Named (Some param, mty_param),Mty_signature sg) as mty_func ->
@@ -2919,7 +2921,8 @@ let report_error ppf = function
         "@[<v>Signature mismatch:@ %a@]" Includemod.report_error errs
   | Not_included_functor errs ->
       fprintf ppf
-        "@[<v>Signature mismatch in included functor's parameter:@ %a@]" Includemod.report_error errs
+        "@[<v>Signature mismatch in included functor's parameter:@ %a@]"
+        Includemod.report_error errs
   | Cannot_eliminate_dependency (dep_type, mty) ->
       let hint =
         match dep_type with

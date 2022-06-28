@@ -373,9 +373,7 @@ and signatures ~loc env ~mark cxt subst sig1 sig2 =
             ((id,pos,Tcoerce_none)::l , pos+1)
         | item -> (l, if is_runtime_component item then pos+1 else pos))
       ([], 0) sig1 in
-  let runtime_pos_rep pos _ = pos in
-  let len1, comps1 =
-    build_component_table runtime_pos_rep sig1 in
+  let len1, comps1 = build_component_table (fun pos _name -> pos) sig1 in
   let len2 =
     List.fold_left
       (fun n i -> if is_runtime_component i then n + 1 else n)
@@ -383,18 +381,14 @@ and signatures ~loc env ~mark cxt subst sig1 sig2 =
       sig2
   in
   (* Do the pairing and checking, and return the final coercion *)
-  let cc =
-    pair_components ~loc ~mark new_env cxt subst comps1 sig2
-  in
+  let cc = pair_components ~loc ~mark new_env cxt subst comps1 sig2 in
   if len1 = len2 then (* see PR#5098 *)
     simplify_structure_coercion cc id_pos_list
   else
     Tcoerce_structure (cc, id_pos_list)
 
 and include_functor_signatures ~loc env ~mark cxt subst sig1 sig2 =
-  let name_pos_rep = fun _ id -> id in
-  let _, comps1 =
-    build_component_table name_pos_rep sig1 in
+  let _, comps1 = build_component_table (fun _pos name -> name) sig1 in
   (* Do the pairing and checking, and return the final coercion *)
   let cc =
     pair_components ~loc ~mark env cxt subst comps1 sig2
