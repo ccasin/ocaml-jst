@@ -2912,8 +2912,8 @@ let report_error ppf = function
       let hint =
         match dep_type with
         | Functor_applied -> "Please bind the argument to a module identifier"
-        | Functor_included -> "This functor can't be included; please create \
-                               an explicit argument"
+        | Functor_included -> "This functor can't be included directly; please \
+                               apply it to an explicit argument"
       in
       fprintf ppf
         "@[This functor has type@ %a@ \
@@ -2932,7 +2932,7 @@ let report_error ppf = function
         modtype mty
   | Recursive_include_functor ->
       fprintf ppf
-        "@[Including a functor is not supported in recursive modules @]"
+        "@[Including a functor is not supported in recursive module signatures @]"
   | With_no_component lid ->
       fprintf ppf
         "@[The signature constrained by `with' has no component named %a@]"
