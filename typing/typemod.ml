@@ -1981,7 +1981,7 @@ and type_module_aux ~alias sttn funct_body anchor env smod =
       end
   | Pmod_structure sstr ->
       let (str, sg, names, _finalenv) =
-        type_structure funct_body anchor env [] sstr in
+        type_structure funct_body anchor env sstr in
       let md =
         { mod_desc = Tmod_structure str;
           mod_type = Mty_signature sg;
@@ -2213,7 +2213,7 @@ and type_open_decl_aux ?used_slot ?toplevel funct_body names env od =
     } in
     open_descr, sg, newenv
 
-and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
+and type_structure ?(toplevel = None) funct_body anchor env sstr =
   let names = Signature_names.create () in
 
   let type_str_item env {pstr_loc = loc; pstr_desc = desc} sig_acc =
@@ -2230,7 +2230,7 @@ and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
         let () = if rec_flag = Recursive then
           Typecore.check_recursive_bindings env defs
         in
-        if toplevel then begin
+        if Option.is_some toplevel then begin
           (* Values bound by '_' still escape in the toplevel, because
               they may be printed even though they are not named *)
           defs |> List.iter (fun vb ->
@@ -2415,6 +2415,7 @@ and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
         let newenv, mtd, sg = transl_modtype_decl names env pmtd in
         Tstr_modtype mtd, [sg], newenv
     | Pstr_open sod ->
+        let toplevel = Option.is_some toplevel in
         let (od, sg, newenv) =
           type_open_decl ~toplevel funct_body names env sod
         in
@@ -2517,6 +2518,7 @@ and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
         Builtin_attributes.parse_standard_implementation_attributes attr;
         Tstr_attribute attr, [], env
   in
+  let toplevel_sig = Option.value toplevel ~default:[] in
   let rec type_struct env sstr str_acc sig_acc =
     match sstr with
     | [] ->
@@ -2540,7 +2542,7 @@ and type_structure ?(toplevel = false) funct_body anchor env toplevel_sig sstr =
       (Cmt_format.Partial_structure str :: previous_saved_types);
     str, sg, names, final_env
   in
-  if toplevel then run ()
+  if Option.is_some toplevel then run ()
   else Builtin_attributes.warning_scope [] run
 
 (* The toplevel will print some types not present in the signature *)
@@ -2561,7 +2563,7 @@ let type_toplevel_phrase env sig_acc s =
   Env.reset_probes ();
   Typecore.reset_allocations ();
   let (str, sg, to_remove_from_sg, env) =
-    type_structure ~toplevel:true false None env sig_acc s in
+    type_structure ~toplevel:(Some sig_acc) false None env s in
   remove_mode_variables env sg;
   remove_mode_variables_for_toplevel str;
   Typecore.optimise_allocations ();
@@ -2746,7 +2748,7 @@ let type_implementation sourcefile outputprefix modulename initial_env ast =
       if !Clflags.print_types then (* #7656 *)
         Warnings.parse_options false "-32-34-37-38-60";
       let (str, sg, names, finalenv) =
-        type_structure initial_env [] ast in
+        type_structure initial_env ast in
       let simple_sg = Signature_names.simplify finalenv names sg in
       if !Clflags.print_types then begin
         Typecore.force_delayed_checks ();

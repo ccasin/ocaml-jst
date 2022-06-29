@@ -32,7 +32,7 @@ end
 val type_module:
         Env.t -> Parsetree.module_expr -> Typedtree.module_expr
 val type_structure:
-  Env.t -> Types.signature -> Parsetree.structure ->
+  Env.t -> Parsetree.structure ->
   Typedtree.structure * Types.signature * Signature_names.t * Env.t
 val type_toplevel_phrase:
   Env.t -> Types.signature -> Parsetree.structure ->
