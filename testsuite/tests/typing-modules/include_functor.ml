@@ -224,7 +224,7 @@ Error: This functor has type
        This functor can't be included directly; please apply it to an explicit argument.
 |}];;
 
-(* Test 11: Include functor should work at the toplevel. *)
+(* Test 11: Include functor should work at the toplevel (and check shadowing). *)
 type t = int
 let x : t = 3
 let x : t = 5
@@ -304,3 +304,26 @@ Line 8, characters 2-21:
       ^^^^^^^^^^^^^^^^^^^
 Error: Including a functor is not supported in recursive module signatures
 |}];;
+
+(* Test 14: Check that we reject including a functor with multiple arguments *)
+module F14 (X : S) (Y : S) = struct
+  let z = (X.x, Y.x)
+end
+
+module M14 = struct
+  type t = int
+  let x : t = 5
+
+  include functor F14
+end;;
+[%%expect{|
+module F14 : functor (X : S) (Y : S) -> sig val z : X.t * Y.t end
+Line 9, characters 18-21:
+9 |   include functor F14
+                      ^^^
+Error: Functors with multiple arguments can not be included directly.
+       This functor has type
+       functor (X : S) (Y : S) -> sig val z : X.t * Y.t end
+       Please apply it to explicit arguments instead.
+|}];;
+

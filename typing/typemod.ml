@@ -85,6 +85,7 @@ type error =
   | Signature_expected
   | Structure_expected of module_type
   | Functor_expected of module_type
+  | Include_functor_arity of module_type
   | Signature_parameter_expected of module_type
   | Recursive_include_functor
   | With_no_component of Longident.t
@@ -175,6 +176,8 @@ let extract_sig_functor_open env loc mty sig_acc =
                                   (Functor_included, mty_func)))
       in
       (sg, coercion)
+  | Mty_functor (_,Mty_functor _) as mty ->
+      raise(Error(loc, env, Include_functor_arity mty))
   | Mty_alias path -> raise(Error(loc, env, Cannot_scrape_alias path))
   | mty -> raise(Error(loc, env, Functor_expected mty))
 
@@ -2941,6 +2944,11 @@ let report_error ppf = function
   | Functor_expected mty ->
       fprintf ppf
         "@[This module is not a functor; it has type@ %a" modtype mty
+  | Include_functor_arity mty ->
+      fprintf ppf
+        "@[Functors with multiple arguments can not be included directly.@ \
+           This functor has type@ %a@ \
+           Please apply it to explicit arguments instead." modtype mty
   | Signature_parameter_expected mty ->
       fprintf ppf
         "@[The type of this functor's parameter is not a signature; it is@ %a"
