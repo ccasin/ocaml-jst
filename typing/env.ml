@@ -2861,16 +2861,26 @@ let lookup_label ?(use=true) ~loc lid env =
 let lookup_all_labels_from_type ?(use=true) ~loc ty_path env =
   lookup_all_labels_from_type ~use ~loc ty_path env
 
-let lookup_instance_variable ?(use=true) ~loc name env =
+type settable_variable =
+  | Instance_variable of Path.t * Asttypes.mutable_flag * string * type_expr
+  | Mutable_variable of Ident.t * type_expr
+
+let lookup_settable_variable ?(use=true) ~loc name env =
   match IdTbl.find_name_and_modes wrap_value ~mark:use name env.values with
   | (path, _, Val_bound vda) -> begin
       let desc = vda.vda_description in
-      match desc.val_kind with
-      | Val_ivar(mut, cl_num) ->
+      match desc.val_kind, path with
+      | Val_ivar(mut, cl_num), _ ->
           use_value ~use ~loc path vda;
-          path, mut, cl_num, desc.val_type
+          Instance_variable (path, mut, cl_num, desc.val_type)
+      | Val_mut, Pident id ->
+          use_value ~use ~loc path vda;
+          Mutable_variable (id,desc.val_type)
+      | Val_mut, _ ->
+          failwith "XXX good error message here" (* CJC TODO *)
       | _ ->
           lookup_error loc env (Not_an_instance_variable name)
+          (* CJC TODO fix up Not_an_instance_variable error message too *)
     end
   | (_, _, Val_unbound Val_unbound_instance_variable) ->
       lookup_error loc env (Masked_instance_variable (Lident name))

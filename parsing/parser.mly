@@ -166,6 +166,11 @@ let local_attr =
 let local_extension =
   Exp.mk ~loc:Location.none (Pexp_extension(local_ext_loc, PStr []))
 
+let let_mutable_ext_loc = mknoloc "extension.let_mutable"
+
+let let_mutable_attr =
+  Attr.mk ~loc:Location.none let_mutable_ext_loc (PStr [])
+
 let mkexp_stack ~loc exp =
   ghexp ~loc (Pexp_apply(local_extension, [Nolabel, exp]))
 
@@ -2415,11 +2420,11 @@ comprehension_tail(bracket):
 %inline comprehension_expr:
 | LBRACKET expr comprehension_tail(RBRACKET)
       { Pexp_extension(
-          Extensions.payload_of_extension_expr 
+          Extensions.payload_of_extension_expr
             ~loc:(make_loc $sloc) (Eexp_list_comprehension($2, $3))) }
 | LBRACKETBAR expr comprehension_tail(BARRBRACKET)
       { Pexp_extension(
-          Extensions.payload_of_extension_expr 
+          Extensions.payload_of_extension_expr
             ~loc:(make_loc $sloc) (Eexp_arr_comprehension($2, $3))) }
 ;
 
@@ -2490,7 +2495,7 @@ comprehension_tail(bracket):
       { fst (mktailexp $loc($3) $2) }
   | LBRACKET expr_semi_list error
       { unclosed "[" $loc($1) "]" $loc($3) }
-  | comprehension_expr { $1 } 
+  | comprehension_expr { $1 }
   | od=open_dot_declaration DOT comprehension_expr
       { Pexp_open(od, mkexp ~loc:($loc($3)) $3) }
   | od=open_dot_declaration DOT LBRACKET expr_semi_list RBRACKET
@@ -2592,15 +2597,19 @@ let_bindings(EXT):
     let_binding(EXT)                            { $1 }
   | let_bindings(EXT) and_let_binding           { addlb $1 $2 }
 ;
+let_and_mutable_attr:
+  | LET         { [] }
+  | LET MUTABLE { [let_mutable_attr] }
+
 %inline let_binding(EXT):
-  LET
+  attrs0 = let_and_mutable_attr
   ext = EXT
   attrs1 = attributes
   rec_flag = rec_flag
   body = let_binding_body
   attrs2 = post_item_attributes
     {
-      let attrs = attrs1 @ attrs2 in
+      let attrs = attrs0 @ attrs1 @ attrs2 in
       mklbs ~loc:$sloc ext rec_flag (mklb ~loc:$sloc true body attrs)
     }
 ;

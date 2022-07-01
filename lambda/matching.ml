@@ -3607,16 +3607,20 @@ let assign_pat ~scopes value_kind opt nraise catch_ids loc pat lam =
     simple_for_let ~scopes value_kind loc lam pat code in
   List.fold_left push_sublet exit rev_sublets
 
-let for_let ~scopes loc param pat body_kind body =
+let for_let ~scopes loc param pat body_kind mutable_flag body =
   match pat.pat_desc with
   | Tpat_any ->
       (* This eliminates a useless variable (and stack slot in bytecode)
          for "let _ = ...". See #6865. *)
       Lsequence (param, body)
   | Tpat_var (id, _) ->
-      (* fast path, and keep track of simple bindings to unboxable numbers *)
-      let k = Typeopt.value_kind pat.pat_env pat.pat_type in
-      Llet (Strict, k, id, param, body)
+    (* fast path, and keep track of simple bindings to unboxable numbers *)
+    let let_kind = match mutable_flag with
+      | Asttypes.Immutable -> Strict
+      | Asttypes.Mutable -> Mut
+    in
+    let k = Typeopt.value_kind pat.pat_env pat.pat_type in
+    Llet (let_kind, k, id, param, body)
   | _ ->
       let opt = ref false in
       let nraise = next_raise_count () in

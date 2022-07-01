@@ -144,7 +144,7 @@ let classify_expression : Typedtree.expression -> sd =
   *)
   let rec classify_expression env e = match e.exp_desc with
     (* binding and variable cases *)
-    | Texp_let (rec_flag, vb, e) ->
+    | Texp_let (rec_flag, _, vb, e) ->
         let env = classify_value_bindings rec_flag env vb in
         classify_expression env e
     | Texp_ident (path, _, _, _) ->
@@ -185,12 +185,14 @@ let classify_expression : Typedtree.expression -> sd =
     | Texp_constant _
     | Texp_new _
     | Texp_instvar _
+    | Texp_mutvar _
     | Texp_tuple _
     | Texp_array _
     | Texp_variant _
     | Texp_setfield _
     | Texp_while _
     | Texp_setinstvar _
+    | Texp_setmutvar _
     | Texp_pack _
     | Texp_object _
     | Texp_function _
@@ -524,7 +526,7 @@ let rec expression : Typedtree.expression -> term_judg =
   fun exp -> match exp.exp_desc with
     | Texp_ident (pth, _, _, _) ->
       path pth
-    | Texp_let (rec_flag, bindings, body) ->
+    | Texp_let (rec_flag, _, bindings, body) ->
       (*
          G  |- <bindings> : m -| G'
          G' |- body : m
@@ -586,6 +588,8 @@ let rec expression : Typedtree.expression -> term_judg =
       path pth << Dereference
     | Texp_instvar (self_path, pth, _inst_var) ->
         join [path self_path << Dereference; path pth]
+    | Texp_mutvar id ->
+        single id.txt << Dereference (* CJC ?????? *)
     | Texp_apply
         ({exp_desc = Texp_ident (_, _, vd, Id_prim _)}, [_, Arg arg], _)
       when is_ref vd ->
@@ -745,6 +749,16 @@ let rec expression : Typedtree.expression -> term_judg =
       *)
       join [
         path pth << Dereference;
+        expression e << Dereference;
+      ]
+    | Texp_setmutvar (id,e) ->
+      (*
+        G |- e: m[Dereference]
+        ----------------------
+        G |- x <- e: m
+      *)
+      join [
+        path (Pident (id.txt)) << Dereference;
         expression e << Dereference;
       ]
     | Texp_letexception ({ext_id}, e) ->

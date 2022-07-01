@@ -83,7 +83,7 @@ val type_binding:
           Parsetree.value_binding list ->
           Typedtree.value_binding list * Env.t
 val type_let:
-        existential_restriction -> Env.t -> rec_flag ->
+        existential_restriction -> Env.t -> rec_flag -> mutable_flag ->
           Parsetree.value_binding list ->
           Typedtree.value_binding list * Env.t
 val type_expression:
@@ -196,6 +196,7 @@ type error =
   | Literal_overflow of string
   | Unknown_literal of string * char
   | Illegal_letrec_pat
+  | Illegal_mutable_pat
   | Illegal_letrec_expr
   | Illegal_class_expr
   | Letop_type_clash of string * Ctype.Unification_trace.t

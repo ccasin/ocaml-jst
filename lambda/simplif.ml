@@ -507,12 +507,13 @@ let simplify_lets lam =
 (* This (small)  optimisation is always legal, it may uncover some
    tail call later on. *)
 
+  (* CJC TODO this doesn't look legal if w is mutable *)
   let mklet str kind v e1 e2  = match e2 with
   | Lvar w when optimize && Ident.same v w -> e1
   | _ -> Llet (str, kind,v,e1,e2) in
 
 
-  let rec simplif = function
+  let rec simplif cjc_x = match cjc_x with (* function *)
     Lvar v as l ->
       begin try
         Hashtbl.find subst v
@@ -553,9 +554,10 @@ let simplify_lets lam =
           Lfunction{fn with body}
       end
   | Lfunction fn -> Lfunction {fn with body = simplif fn.body}
-  | Llet(_str, _k, v, Lvar w, l2) when optimize ->
-      Hashtbl.add subst v (simplif (Lvar w));
-      simplif l2
+  | Llet(str, _k, v, Lvar w, l2)
+    when optimize && not (equal_let_kind str Mut) ->
+     Hashtbl.add subst v (simplif (Lvar w));
+     simplif l2
   | Llet(Strict, kind, v,
          Lprim(Pmakeblock(0, Mutable, kind_ref, _mode) as prim, [linit], loc),
          lbody)

@@ -257,9 +257,9 @@ let expr sub x =
     match x.exp_desc with
     | Texp_ident _
     | Texp_constant _ as d -> d
-    | Texp_let (rec_flag, list, exp) ->
+    | Texp_let (rec_flag, mut_flag, list, exp) ->
         let (rec_flag, list) = sub.value_bindings sub (rec_flag, list) in
-        Texp_let (rec_flag, list, sub.expr sub exp)
+        Texp_let (rec_flag, mut_flag, list, sub.expr sub exp)
     | Texp_function { arg_label; param; cases; partial; region; warnings } ->
         let cases = List.map (sub.case sub) cases in
         Texp_function { arg_label; param; cases; partial; region; warnings }
@@ -356,11 +356,17 @@ let expr sub x =
           )
     | Texp_new _
     | Texp_instvar _ as d -> d
+    | Texp_mutvar _ as d -> d
     | Texp_setinstvar (path1, path2, id, exp) ->
         Texp_setinstvar (
           path1,
           path2,
           id,
+          sub.expr sub exp
+        )
+    | Texp_setmutvar (lid, exp) ->
+        Texp_setmutvar (
+          lid,
           sub.expr sub exp
         )
     | Texp_override (path, list) ->

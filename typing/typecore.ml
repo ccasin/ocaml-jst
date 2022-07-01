@@ -132,6 +132,7 @@ type error =
   | Literal_overflow of string
   | Unknown_literal of string * char
   | Illegal_letrec_pat
+  | Illegal_mutable_pat
   | Illegal_letrec_expr
   | Illegal_class_expr
   | Letop_type_clash of string * Ctype.Unification_trace.t
@@ -2222,12 +2223,12 @@ let check_unused ?(lev=get_current_level ()) env expected_ty cases =
 let iter_pattern_variables_type f : pattern_variable list -> unit =
   List.iter (fun {pv_type; _} -> f pv_type)
 
-let add_pattern_variables ?check ?check_as env pv =
+let add_pattern_variables ?check ?check_as ?(val_kind=Val_reg) env pv =
   List.fold_right
     (fun {pv_id; pv_mode; pv_type; pv_loc; pv_as_var; pv_attributes} env ->
        let check = if pv_as_var then check_as else check in
        Env.add_value ?check ~mode:pv_mode pv_id
-         {val_type = pv_type; val_kind = Val_reg; Types.val_loc = pv_loc;
+         {val_type = pv_type; val_kind; Types.val_loc = pv_loc;
           val_attributes = pv_attributes;
           val_uid = Uid.mk ~current_unit:(Env.get_unit_name ());
          } env
@@ -2243,7 +2244,7 @@ let type_pattern category ~lev ~alloc_mode env spat expected_ty =
   (pat, !new_env, get_ref pattern_force, pvs, unpacks)
 
 let type_pattern_list
-    category no_existentials env spatl expected_tys allow
+    ~is_mutable category no_existentials env spatl expected_tys allow
   =
   reset_pattern allow;
   let new_env = ref env in
@@ -2261,7 +2262,8 @@ let type_pattern_list
       name, loc, Uid.mk ~current_unit:(Env.get_unit_name ())
     ) (get_ref module_variables)
   in
-  let new_env = add_pattern_variables !new_env pvs in
+  let val_kind = if is_mutable then Val_mut else Val_reg in
+  let new_env = add_pattern_variables ~val_kind !new_env pvs in
   (patl, new_env, get_ref pattern_force, pvs, unpacks)
 
 let type_class_arg_pattern cl_num val_env met_env l spat =
@@ -2404,7 +2406,7 @@ let force_delayed_checks () =
 
 let rec final_subexpression exp =
   match exp.exp_desc with
-    Texp_let (_, _, e)
+    Texp_let (_, _, _, e)
   | Texp_sequence (_, e)
   | Texp_try (e, _)
   | Texp_ifthenelse (_, e, _)
@@ -2668,7 +2670,7 @@ let rec is_nonexpansive exp =
   | Texp_function _
   | Texp_probe_is_enabled _
   | Texp_array [] -> true
-  | Texp_let(_rec_flag, pat_exp_list, body) ->
+  | Texp_let(_rec_flag, _mutable_flag, pat_exp_list, body) ->
       List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list &&
       is_nonexpansive body
   | Texp_apply(e, (_,Omitted _)::el, _) ->
@@ -2756,7 +2758,9 @@ let rec is_nonexpansive exp =
   | Texp_for _
   | Texp_send _
   | Texp_instvar _
+  | Texp_mutvar _
   | Texp_setinstvar _
+  | Texp_setmutvar _
   | Texp_override _
   | Texp_letexception _
   | Texp_letop _
@@ -3018,7 +3022,7 @@ let check_partial_application statement exp =
           if statement then
             let rec loop {exp_loc; exp_desc; exp_extra; _} =
               match exp_desc with
-              | Texp_let (_, _, e)
+              | Texp_let (_, _, _, e)
               | Texp_sequence (_, e)
               | Texp_letexception (_, e)
               | Texp_letmodule (_, _, _, _, e) ->
@@ -3048,8 +3052,9 @@ let check_partial_application statement exp =
             | Texp_construct _ | Texp_variant _ | Texp_record _
             | Texp_field _ | Texp_setfield _ | Texp_array _
             | Texp_list_comprehension _ | Texp_arr_comprehension _
-            | Texp_while _ | Texp_for _ | Texp_instvar _
-            | Texp_setinstvar _ | Texp_override _ | Texp_assert _
+            | Texp_while _ | Texp_for _ | Texp_mutvar _ | Texp_instvar _
+            | Texp_setinstvar _ | Texp_setmutvar _
+            | Texp_override _ | Texp_assert _
             | Texp_lazy _ | Texp_object _ | Texp_pack _ | Texp_unreachable
             | Texp_extension_constructor _ | Texp_ifthenelse (_, _, None)
             | Texp_probe _ | Texp_probe_is_enabled _
@@ -3061,7 +3066,7 @@ let check_partial_application statement exp =
                 check e; List.iter (fun {c_rhs; _} -> check c_rhs) cases
             | Texp_ifthenelse (_, e1, Some e2) ->
                 check e1; check e2
-            | Texp_let (_, _, e) | Texp_sequence (_, e) | Texp_open (_, e)
+            | Texp_let (_, _, _, e) | Texp_sequence (_, e) | Texp_open (_, e)
             | Texp_letexception (_, e) | Texp_letmodule (_, _, _, _, e) ->
                 check e
             | Texp_apply _ | Texp_send _ | Texp_new _ | Texp_letop _ ->
@@ -3314,7 +3319,13 @@ and type_expect_
             Texp_instvar(self_path, path,
                          match lid.txt with
                              Longident.Lident txt -> { txt; loc = lid.loc }
-                           | _ -> assert false)
+                         | _ -> assert false)
+        | Val_mut -> begin
+            match path with
+            | Path.Pident id ->
+               Texp_mutvar {loc = lid.loc; txt = id}
+            | _ -> assert false (* CJC TODO error *)
+          end
         | Val_self (_, _, cl_num, _) ->
             let (path, _) =
               Env.find_value_by_name (Longident.Lident ("self-" ^ cl_num)) env
@@ -3382,8 +3393,21 @@ and type_expect_
         if rec_flag = Recursive then In_rec
         else if List.compare_length_with spat_sexp_list 1 > 0 then In_group
         else With_attributes in
+      let mut_flag =
+        (* We check the first value binding for the mutable attribute, because that is where
+           the parser puts it (the Pexp_let itself doesn't have attributes). *)
+        match spat_sexp_list with
+        | [] -> assert false
+        | pvb :: _ ->
+          match Builtin_attributes.has_let_mutable pvb.pvb_attributes with
+          | Result.Error () ->
+            raise (Error (pvb.pvb_loc, env,
+                          Extension_not_enabled(Clflags.Extension.Let_mutable)))
+          | Ok true -> Mutable
+          | Ok false -> Immutable
+      in
       let (pat_exp_list, new_env, unpacks) =
-        type_let existential_context env rec_flag spat_sexp_list true in
+        type_let existential_context env rec_flag mut_flag spat_sexp_list true in
       let in_function =
         match sexp.pexp_attributes with
         | [{Parsetree.attr_name = {txt="#default"};_}] -> in_function
@@ -3397,7 +3421,7 @@ and type_expect_
           check_recursive_bindings env pat_exp_list
       in
       re {
-        exp_desc = Texp_let(rec_flag, pat_exp_list, body);
+        exp_desc = Texp_let(rec_flag, mut_flag, pat_exp_list, body);
         exp_loc = loc; exp_extra = [];
         exp_type = body.exp_type;
         exp_mode = expected_mode.mode;
@@ -4208,11 +4232,8 @@ and type_expect_
               exp_env = env }
         end
   | Pexp_setinstvar (lab, snewval) -> begin
-      let (path, mut, cl_num, ty) =
-        Env.lookup_instance_variable ~loc lab.txt env
-      in
-      match mut with
-      | Mutable ->
+      match Env.lookup_settable_variable ~loc lab.txt env with
+      | Instance_variable (path,Mutable,cl_num,ty) ->
           let newval =
             type_expect env mode_global snewval
               (mk_expected (instance ty))
@@ -4226,8 +4247,20 @@ and type_expect_
             exp_type = instance Predef.type_unit; exp_mode = Value_mode.global;
             exp_attributes = sexp.pexp_attributes;
             exp_env = env }
-      | _ ->
-          raise(Error(loc, env, Instance_variable_not_mutable lab.txt))
+      | Instance_variable (_,Immutable,_,_) ->
+        raise(Error(loc, env, Instance_variable_not_mutable lab.txt))
+      | Mutable_variable (id,ty) ->
+          let newval =
+            type_expect env mode_global (* CJC TODO surely wrong *)
+              snewval (mk_expected (instance ty))
+          in
+          let lid = {txt = id; loc} in
+          rue {
+            exp_desc = Texp_setmutvar(lid, newval);
+            exp_loc = loc; exp_extra = [];
+            exp_type = instance Predef.type_unit; exp_mode = Value_mode.global;
+            exp_attributes = sexp.pexp_attributes;
+            exp_env = env }
     end
   | Pexp_override lst ->
       let _ =
@@ -5298,7 +5331,7 @@ and type_argument ?explanation ?recarg env (mode : expected_mode) sarg
       let let_pat, let_var = var_pair ~mode:texp.exp_mode "arg" texp.exp_type in
       re { texp with exp_type = ty_fun; exp_mode = mode.mode;
              exp_desc =
-               Texp_let (Nonrecursive,
+               Texp_let (Nonrecursive, Immutable,
                          [{vb_pat=let_pat; vb_expr=texp; vb_attributes=[];
                            vb_loc=Location.none;
                           }],
@@ -5784,7 +5817,7 @@ and type_let
     ?(check = fun s -> Warnings.Unused_var s)
     ?(check_strict = fun s -> Warnings.Unused_var_strict s)
     existential_context
-    env rec_flag spat_sexp_list allow =
+    env rec_flag mut_flag spat_sexp_list allow =
   let open Ast_helper in
   begin_def();
   if !Clflags.principal then begin_def ();
@@ -5854,8 +5887,14 @@ and type_let
          attrs, pat_mode, exp_mode, spat)
       spat_sexp_list in
   let nvs = List.map (fun _ -> newvar ()) spatl in
+  let is_mutable = match mut_flag with
+    | Mutable -> true
+    | Immutable -> false
+  in
   let (pat_list, new_env, force, pvs, unpacks) =
-    type_pattern_list Value existential_context env spatl nvs allow in
+    type_pattern_list ~is_mutable Value existential_context env spatl nvs
+      allow
+  in
   let attrs_list = List.map (fun (attrs, _, _, _) -> attrs) spatl in
   let is_recursive = (rec_flag = Recursive) in
   (* If recursive, first unify with an approximation of the expression *)
@@ -6069,13 +6108,15 @@ and type_let
         })
       l spat_sexp_list
   in
-  if is_recursive then
+  if is_recursive || is_mutable then begin
+    let err = if is_mutable then Illegal_mutable_pat else Illegal_letrec_pat in
     List.iter
       (fun {vb_pat=pat} -> match pat.pat_desc with
            Tpat_var _ -> ()
-         | Tpat_alias ({pat_desc=Tpat_any}, _, _) -> ()
-         | _ -> raise(Error(pat.pat_loc, env, Illegal_letrec_pat)))
-      l;
+         | Tpat_alias ({pat_desc=Tpat_any}, _, _) when not is_mutable -> ()
+         | _ -> raise(Error(pat.pat_loc, env, err)))
+      l
+  end;
   List.iter (function
       | {vb_pat = {pat_desc = Tpat_any; pat_extra; _}; vb_expr; _} ->
           if not (List.exists (function (Tpat_constraint _, _, _) -> true
@@ -6250,18 +6291,31 @@ and type_andops env sarg sands expected_ty =
 
 let type_binding env rec_flag spat_sexp_list =
   Typetexp.reset_type_variables();
+  let mut_flag =
+    (* We check the first value binding for the mutable attribute, because that is where
+       the parser puts it (the Pexp_let itself doesn't have attributes). *)
+    match spat_sexp_list with
+    | [] -> assert false
+    | pvb :: _ ->
+      match Builtin_attributes.has_let_mutable pvb.pvb_attributes with
+      | Result.Error () ->
+        raise (Error (pvb.pvb_loc, env,
+                      Extension_not_enabled(Clflags.Extension.Let_mutable)))
+      | Ok true -> failwith "CJC TODO good error for toplevel mutable let"
+      | Ok false -> Immutable
+  in
   let (pat_exp_list, new_env, _unpacks) =
     type_let
       ~check:(fun s -> Warnings.Unused_value_declaration s)
       ~check_strict:(fun s -> Warnings.Unused_value_declaration s)
       At_toplevel
-      env rec_flag spat_sexp_list false
+      env rec_flag mut_flag spat_sexp_list false
   in
   (pat_exp_list, new_env)
 
-let type_let existential_ctx env rec_flag spat_sexp_list =
+let type_let existential_ctx env rec_flag mut_flag spat_sexp_list =
   let (pat_exp_list, new_env, _unpacks) =
-    type_let existential_ctx env rec_flag spat_sexp_list false in
+    type_let existential_ctx env rec_flag mut_flag spat_sexp_list false in
   (pat_exp_list, new_env)
 
 (* Typing of toplevel expressions *)
@@ -6746,6 +6800,9 @@ let report_error ~loc env = function
   | Illegal_letrec_pat ->
       Location.errorf ~loc
         "Only variables are allowed as left-hand side of `let rec'"
+  | Illegal_mutable_pat ->
+      Location.errorf ~loc
+        "Only variables are allowed as left-hand side of `let mutable'"
   | Illegal_letrec_expr ->
       Location.errorf ~loc
         "This kind of expression is not allowed as right-hand side of `let rec'"

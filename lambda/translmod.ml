@@ -650,7 +650,9 @@ and transl_structure ~scopes loc fields cc rootpath final_env = function
       | Tstr_value(rec_flag, pat_expr_list) ->
           (* Translate bindings first *)
           let mk_lam_let =
-            transl_let ~scopes ~in_structure:true rec_flag pat_expr_list Pgenval in
+            transl_let ~scopes ~in_structure:true rec_flag Immutable
+              pat_expr_list Pgenval
+          in
           let ext_fields =
             List.rev_append (let_bound_idents pat_expr_list) fields in
           (* Then, translate remainder of struct *)
@@ -1061,8 +1063,8 @@ let transl_store_structure ~scopes glob map prims aliases str =
         | Tstr_value(rec_flag, pat_expr_list) ->
             let ids = let_bound_idents pat_expr_list in
             let lam =
-              transl_let ~scopes ~in_structure:true rec_flag pat_expr_list
-                 Pintval (* unit *)
+              transl_let ~scopes ~in_structure:true rec_flag Immutable
+                pat_expr_list Pintval (* unit *)
                 (store_idents Loc_unknown ids)
             in
             Lsequence(Lambda.subst no_env_update subst lam,
@@ -1561,7 +1563,7 @@ let transl_toplevel_item ~scopes item =
       transl_exp ~scopes expr
   | Tstr_value(rec_flag, pat_expr_list) ->
       let idents = let_bound_idents pat_expr_list in
-      transl_let ~scopes ~in_structure:true rec_flag pat_expr_list
+      transl_let ~scopes ~in_structure:true rec_flag Immutable pat_expr_list
         Pintval (* unit *)
         (make_sequence toploop_setvalue_id idents)
   | Tstr_typext(tyext) ->

@@ -190,7 +190,7 @@ let expr sub {exp_extra; exp_desc; exp_env; _} =
   match exp_desc with
   | Texp_ident _  -> ()
   | Texp_constant _ -> ()
-  | Texp_let (rec_flag, list, exp) ->
+  | Texp_let (rec_flag, _, list, exp) ->
       sub.value_bindings sub (rec_flag, list);
       sub.expr sub exp
   | Texp_function {cases; _} ->
@@ -251,7 +251,9 @@ let expr sub {exp_extra; exp_desc; exp_env; _} =
       Option.iter (sub.expr sub) expo
   | Texp_new _ -> ()
   | Texp_instvar _ -> ()
+  | Texp_mutvar _ -> ()
   | Texp_setinstvar (_, _, _, exp) ->sub.expr sub exp
+  | Texp_setmutvar (_, exp) -> sub.expr sub exp
   | Texp_override (_, list) ->
       List.iter (fun (_, _, e) -> sub.expr sub e) list
   | Texp_letmodule (_, _, _, mexpr, exp) ->

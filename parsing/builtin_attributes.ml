@@ -426,3 +426,12 @@ let check_local ext_names other_names attr =
 
 let has_local attr =
   check_local ["extension.local"] ["ocaml.local"; "local"] attr
+
+let has_let_mutable attr =
+  if List.exists (check ["extension.let_mutable"]) attr then
+    if not (Clflags.Extension.is_enabled Let_mutable) then
+      Error ()
+    else
+      Ok true
+  else
+    Ok false
