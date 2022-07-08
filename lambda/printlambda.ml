@@ -623,7 +623,6 @@ let rec lam ppf = function
   | Llet _ as expr ->
       let kind = function
         Alias -> "a" | Strict -> "" | StrictOpt -> "o" | Variable -> "v"
-      | Mut -> "m"
       in
       let rec letbody ~sp = function
         | Llet(str, k, id, arg, body) ->

@@ -359,15 +359,14 @@ type local_attribute =
 
 type function_kind = Curried of {nlocal: int} | Tupled
 
-type let_kind = Strict | Alias | StrictOpt | Variable | Mut
+type let_kind = Strict | Alias | StrictOpt | Variable
 let equal_let_kind x y =
   match x, y with
   | Strict, Strict -> true
   | Alias, Alias -> true
   | StrictOpt, StrictOpt -> true
   | Variable, Variable -> true
-  | Mut, Mut -> true
-  | (Strict | Alias | StrictOpt | Variable | Mut), _ -> false
+  | (Strict | Alias | StrictOpt | Variable), _ -> false
 
 
 type meth_kind = Self | Public | Cached

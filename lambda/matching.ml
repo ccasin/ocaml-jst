@@ -3617,7 +3617,7 @@ let for_let ~scopes loc param pat body_kind mutable_flag body =
     (* fast path, and keep track of simple bindings to unboxable numbers *)
     let let_kind = match mutable_flag with
       | Asttypes.Immutable -> Strict
-      | Asttypes.Mutable -> Mut
+      | Asttypes.Mutable -> Variable
     in
     let k = Typeopt.value_kind pat.pat_env pat.pat_type in
     Llet (let_kind, k, id, param, body)

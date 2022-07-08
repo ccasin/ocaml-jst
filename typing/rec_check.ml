@@ -751,16 +751,13 @@ let rec expression : Typedtree.expression -> term_judg =
         path pth << Dereference;
         expression e << Dereference;
       ]
-    | Texp_setmutvar (id,e) ->
+    | Texp_setmutvar (_id,e) ->
       (*
         G |- e: m[Dereference]
         ----------------------
         G |- x <- e: m
       *)
-      join [
-        path (Pident (id.txt)) << Dereference;
-        expression e << Dereference;
-      ]
+        expression e << Dereference
     | Texp_letexception ({ext_id}, e) ->
       (* G |- e: m
          ----------------------------

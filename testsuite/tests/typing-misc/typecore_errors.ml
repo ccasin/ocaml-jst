@@ -181,7 +181,7 @@ let x = object(self) method m = self <-0 end
 Line 1, characters 32-40:
 1 | let x = object(self) method m = self <-0 end
                                     ^^^^^^^^
-Error: The value self is not an instance variable
+Error: The value self is not an instance or mutable variable
 |}]
 
 (** Multiply override *)

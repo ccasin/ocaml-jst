@@ -507,7 +507,6 @@ let simplify_lets lam =
 (* This (small)  optimisation is always legal, it may uncover some
    tail call later on. *)
 
-  (* CJC TODO this doesn't look legal if w is mutable *)
   let mklet str kind v e1 e2  = match e2 with
   | Lvar w when optimize && Ident.same v w -> e1
   | _ -> Llet (str, kind,v,e1,e2) in
@@ -555,7 +554,7 @@ let simplify_lets lam =
       end
   | Lfunction fn -> Lfunction {fn with body = simplif fn.body}
   | Llet(str, _k, v, Lvar w, l2)
-    when optimize && not (equal_let_kind str Mut) ->
+    when optimize && not (equal_let_kind str Variable) ->
      Hashtbl.add subst v (simplif (Lvar w));
      simplif l2
   | Llet(Strict, kind, v,

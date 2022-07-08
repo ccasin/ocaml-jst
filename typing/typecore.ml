@@ -3324,7 +3324,7 @@ and type_expect_
             match path with
             | Path.Pident id ->
                Texp_mutvar {loc = lid.loc; txt = id}
-            | _ -> assert false (* CJC TODO error *)
+            | _ -> assert false
           end
         | Val_self (_, _, cl_num, _) ->
             let (path, _) =
@@ -3943,12 +3943,18 @@ and type_expect_
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
   | Pexp_while(scond, sbody) ->
+      let cond_env =
+        if is_local_returning_expr scond then env else Env.add_region_lock env
+      in
       let cond =
-        type_expect (Env.add_region_lock env) (mode_var ()) scond
+        type_expect cond_env (mode_var ()) scond
           (mk_expected ~explanation:While_loop_conditional Predef.type_bool)
       in
+      let body_env =
+        if is_local_returning_expr sbody then env else Env.add_region_lock env
+      in
       let body =
-        type_statement ~explanation:While_loop_body (Env.add_region_lock env) sbody
+        type_statement ~explanation:While_loop_body body_env sbody
       in
       rue {
         exp_desc = Texp_while(cond, body);
@@ -3969,9 +3975,12 @@ and type_expect_
       let id, new_env =
         type_for_loop_index ~loc ~env ~param Predef.type_int
       in
+      let new_env =
+        if is_local_returning_expr sbody then new_env
+        else Env.add_region_lock new_env
+      in
       let body =
-        type_statement ~explanation:For_loop_body
-          (Env.add_region_lock new_env) sbody
+        type_statement ~explanation:For_loop_body new_env sbody
       in
       rue {
         exp_desc = Texp_for(id, param, low, high, dir, body);
@@ -4249,11 +4258,12 @@ and type_expect_
             exp_env = env }
       | Instance_variable (_,Immutable,_,_) ->
         raise(Error(loc, env, Instance_variable_not_mutable lab.txt))
-      | Mutable_variable (id,ty) ->
+      | Mutable_variable (id,ty,mode) ->
           let newval =
-            type_expect env mode_global (* CJC TODO surely wrong *)
+            type_expect env (mode_nontail mode)
               snewval (mk_expected (instance ty))
           in
+          unify_exp env newval ty; (* CJC TODO ask leo *)
           let lid = {txt = id; loc} in
           rue {
             exp_desc = Texp_setmutvar(lid, newval);
@@ -6294,6 +6304,7 @@ let type_binding env rec_flag spat_sexp_list =
   let mut_flag =
     (* We check the first value binding for the mutable attribute, because that is where
        the parser puts it (the Pexp_let itself doesn't have attributes). *)
+    (* CJC XXX todo - the mut flag goes on each thing, not the whole let *)
     match spat_sexp_list with
     | [] -> assert false
     | pvb :: _ ->

@@ -281,7 +281,7 @@ type function_kind = Curried of {nlocal: int} | Tupled
    before the resulting closure must be locally allocated.
    See [check_lfunction] for details *)
 
-type let_kind = Strict | Alias | StrictOpt | Variable | Mut
+type let_kind = Strict | Alias | StrictOpt | Variable
 (* Meaning of kinds for let x = e in e':
     Strict: e may have side-effects; always evaluate e first
       (If e is a simple expression, e.g. a variable or constant,
