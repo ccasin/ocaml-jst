@@ -78,6 +78,8 @@ and 'k pattern_desc =
         (** _ *)
   | Tpat_var : Ident.t * string loc -> value pattern_desc
         (** x *)
+  | Tpat_mutvar : Ident.t * string loc -> value pattern_desc
+        (** mutable x *)
   | Tpat_alias :
       value general_pattern * Ident.t * string loc -> value pattern_desc
         (** P as a *)
@@ -176,13 +178,9 @@ and expression_desc =
          *)
   | Texp_constant of constant
         (** 1, 'a', "true", 1.0, 1l, 1L, 1n *)
-  | Texp_let of rec_flag * mutable_flag * value_binding list * expression
-        (** let P1 = E1 and ... and Pn = EN in E
-               (rec_flag = Nonrecursive, mutable_flag = Immutable)
-            let rec P1 = E1 and ... and Pn = EN in E
-               (rec_flag = Recursive, mutable_flag = Immutable)
-            let mutable x = E1 and ... and xn = EN in E
-               (rec_flag = Nonrecursive, (mutable_flag = Mutable)
+  | Texp_let of rec_flag * value_binding list * expression
+        (** let P1 = E1 and ... and Pn = EN in E       (flag = Nonrecursive)
+            let rec P1 = E1 and ... and Pn = EN in E   (flag = Recursive)
          *)
   | Texp_function of { arg_label : arg_label; param : Ident.t;
       cases : value case list; partial : partial;

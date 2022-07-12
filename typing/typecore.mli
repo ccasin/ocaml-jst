@@ -83,7 +83,7 @@ val type_binding:
           Parsetree.value_binding list ->
           Typedtree.value_binding list * Env.t
 val type_let:
-        existential_restriction -> Env.t -> rec_flag -> mutable_flag ->
+        existential_restriction -> Env.t -> rec_flag ->
           Parsetree.value_binding list ->
           Typedtree.value_binding list * Env.t
 val type_expression:

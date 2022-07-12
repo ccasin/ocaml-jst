@@ -161,4 +161,27 @@ val foo5_3 : int -> int = <fun>
 val foo5_4 : int -> int = <fun>
 |}]
 
+(* Test 6: you can use mutable with and *)
+let foo_6 () =
+  let z = 3
+  and mutable x = []
+  in
+  x <- z :: x;
+  match x with
+  | [] -> 0
+  | z :: _ -> z
+[%%expect{|
+val foo_6 : unit -> int = <fun>
+|}]
 
+(* Test 7: mutable and rec don't mix
+let foo_7 () =
+  let rec z = 1 :: x
+  and mutable x = []
+  in
+  match x with
+  | [] -> 0
+  | _ :: _ -> 1
+[%%expect{|
+
+  |}] *)

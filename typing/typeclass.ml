@@ -1203,7 +1203,7 @@ and class_expr_aux cl_num val_env met_env scl =
          }
   | Pcl_let (rec_flag, sdefs, scl') ->
       let (defs, val_env) =
-        Typecore.type_let In_class_def val_env rec_flag Immutable sdefs in
+        Typecore.type_let In_class_def val_env rec_flag sdefs in
       let (vals, met_env) =
         List.fold_right
           (fun (id, modes) (vals, met_env) ->

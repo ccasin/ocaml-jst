@@ -315,6 +315,8 @@ let pattern : type k . _ -> k T.general_pattern -> _ = fun sub pat ->
           | _ ->
               Ppat_var name
         end
+    | Tpat_mutvar (_id, name) ->
+      Ppat_var name
 
     (* We transform (_ as x) in x if _ and x have the same location.
        The compiler transforms (x:t) into (_ as x : t).
@@ -405,7 +407,7 @@ let expression sub exp =
     match exp.exp_desc with
       Texp_ident (_path, lid, _, _) -> Pexp_ident (map_loc sub lid)
     | Texp_constant cst -> Pexp_constant (constant cst)
-    | Texp_let (rec_flag, _, list, exp) ->
+    | Texp_let (rec_flag, list, exp) ->
         Pexp_let (rec_flag,
           List.map (sub.value_binding sub) list,
           sub.expr sub exp)

@@ -2892,8 +2892,7 @@ let lookup_settable_variable ?(use=true) ~loc name env =
           let mode = mode_of_locks Value_mode.local locks in
           use_value ~use ~loc path vda;
           Mutable_variable (id,desc.val_type,mode)
-      | Val_mut, _ -> assert false
-          (* Unreachable due to Pexp_ident case of type_expect_ in typecore *)
+      | Val_mut, _ -> assert false (* CJC TODO double check this is unreachable *)
       | _ ->
           lookup_error loc env (Not_a_settable_variable name)
           (* CJC TODO fix up Not_an_instance_variable error message too *)

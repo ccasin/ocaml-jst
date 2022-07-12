@@ -238,6 +238,7 @@ and pattern : type k . _ -> _ -> k general_pattern -> unit = fun i ppf x ->
   match x.pat_desc with
   | Tpat_any -> line i ppf "Tpat_any\n";
   | Tpat_var (s,_) -> line i ppf "Tpat_var \"%a\"\n" fmt_ident s;
+  | Tpat_mutvar (s,_) -> line i ppf "Tpat_mutvar \"%a\"\n" fmt_ident s;
   | Tpat_alias (p, s,_) ->
       line i ppf "Tpat_alias \"%a\"\n" fmt_ident s;
       pattern i ppf p;
@@ -340,8 +341,8 @@ and expression i ppf x =
   | Texp_instvar (_, li,_) -> line i ppf "Texp_instvar %a\n" fmt_path li;
   | Texp_mutvar id -> line i ppf "Texp_mutvar %a\n" fmt_ident id.txt;
   | Texp_constant (c) -> line i ppf "Texp_constant %a\n" fmt_constant c;
-  | Texp_let (rf, mf, l, e) ->
-      line i ppf "Texp_let %a%a\n" fmt_rec_flag rf fmt_mutable_flag mf;
+  | Texp_let (rf, l, e) ->
+      line i ppf "Texp_let %a\n" fmt_rec_flag rf;
       list i value_binding ppf l;
       expression i ppf e;
   | Texp_function { arg_label = p; param = _; cases; partial = _; region } ->

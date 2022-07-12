@@ -186,7 +186,7 @@ let rec push_defaults loc bindings cases partial warnings =
   | [{c_lhs=pat; c_guard=None;
       c_rhs={exp_attributes=[{Parsetree.attr_name = {txt="#default"};_}];
              exp_desc = Texp_let
-               (Nonrecursive, Immutable, binds,
+               (Nonrecursive, binds,
                 ({exp_desc = Texp_function _} as e2))}}] ->
       push_defaults loc (Bind_value binds :: bindings)
                    [{c_lhs=pat;c_guard=None;c_rhs=e2}]
@@ -205,7 +205,7 @@ let rec push_defaults loc bindings cases partial warnings =
           (fun exp binds ->
             {exp with exp_desc =
              match binds with
-             | Bind_value binds -> Texp_let(Nonrecursive, Immutable, binds, exp)
+             | Bind_value binds -> Texp_let(Nonrecursive, binds, exp)
              | Bind_module (id, name, pres, mexpr) ->
                  Texp_letmodule (Some id, name, pres, mexpr, exp)})
           case.c_rhs bindings
@@ -350,9 +350,9 @@ and transl_exp0 ~in_new_scope ~scopes e =
         e.exp_env e.exp_type path desc kind
   | Texp_constant cst ->
       Lconst(Const_base cst)
-  | Texp_let(rec_flag, mutable_flag, pat_expr_list, body) ->
+  | Texp_let(rec_flag, pat_expr_list, body) ->
       let body_kind = Typeopt.value_kind body.exp_env body.exp_type in
-      transl_let ~scopes rec_flag mutable_flag pat_expr_list
+      transl_let ~scopes rec_flag pat_expr_list
         body_kind (event_before ~scopes body (transl_exp ~scopes body))
   | Texp_function { arg_label = _; param; cases; partial; region; warnings } ->
       let scopes =
@@ -1197,7 +1197,7 @@ and transl_bound_exp ~scopes ~in_structure pat expr =
   bindings and body of let constructs.
 *)
 and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
-               rec_flag mutable_flag pat_expr_list body_kind =
+               rec_flag pat_expr_list body_kind =
   match rec_flag with
     Nonrecursive ->
       let rec transl = function
@@ -1209,7 +1209,7 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
           let lam = if add_regions then maybe_region lam else lam in
           let mk_body = transl rem in
           fun body ->
-            Matching.for_let ~scopes pat.pat_loc lam pat body_kind mutable_flag
+            Matching.for_let ~scopes pat.pat_loc lam pat body_kind
               (mk_body body)
       in
       transl pat_expr_list
@@ -1512,9 +1512,8 @@ and transl_letop ~scopes loc env let_ ands param case partial warnings =
 let transl_exp ~scopes exp =
   maybe_region (transl_exp ~scopes exp)
 
-let transl_let ~scopes ?in_structure rec_flag mutable_flag pat_expr_list =
-  transl_let ~scopes ~add_regions:true ?in_structure rec_flag mutable_flag
-    pat_expr_list
+let transl_let ~scopes ?in_structure rec_flag pat_expr_list =
+  transl_let ~scopes ~add_regions:true ?in_structure rec_flag pat_expr_list
 
 let transl_scoped_exp ~scopes exp =
   maybe_region (transl_scoped_exp ~scopes exp)
