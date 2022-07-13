@@ -253,7 +253,12 @@ and expression_desc =
   | Texp_array of expression list
   | Texp_ifthenelse of expression * expression * expression option
   | Texp_sequence of expression * expression
-  | Texp_while of expression * expression
+  | Texp_while of
+      { wh_cond : expression;
+        wh_cond_region : bool; (* False means allocates in outer region *)
+        wh_body : expression;
+        wh_body_region : bool  (* False means allocates in outer region *)
+      }
   | Texp_list_comprehension of
       expression * comprehension list
   | Texp_arr_comprehension of

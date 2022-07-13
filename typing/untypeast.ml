@@ -471,8 +471,8 @@ let expression sub exp =
           Option.map (sub.expr sub) expo)
     | Texp_sequence (exp1, exp2) ->
         Pexp_sequence (sub.expr sub exp1, sub.expr sub exp2)
-    | Texp_while (exp1, exp2) ->
-        Pexp_while (sub.expr sub exp1, sub.expr sub exp2)
+    | Texp_while {wh_cond; wh_body} ->
+        Pexp_while (sub.expr sub wh_cond, sub.expr sub wh_body)
     | Texp_list_comprehension(exp1, type_comp) ->
       Pexp_extension
       (Extensions.payload_of_extension_expr ~loc

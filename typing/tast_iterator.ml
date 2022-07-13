@@ -229,9 +229,9 @@ let expr sub {exp_extra; exp_desc; exp_env; _} =
   | Texp_sequence (exp1, exp2) ->
       sub.expr sub exp1;
       sub.expr sub exp2
-  | Texp_while (exp1, exp2) ->
-      sub.expr sub exp1;
-      sub.expr sub exp2
+  | Texp_while { wh_cond; wh_body } ->
+      sub.expr sub wh_cond;
+      sub.expr sub wh_body
   | Texp_list_comprehension (exp1, type_comps)
   | Texp_arr_comprehension (exp1, type_comps) ->
     sub.expr sub exp1;

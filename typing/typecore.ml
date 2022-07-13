@@ -1659,7 +1659,7 @@ and type_pat_aux
             let mode =
               Counter_example { info with explosion_fuel; constrs; labels }
             in
-            type_pat category ~mode ~mutability sp expected_ty k
+            type_pat category ~mode sp expected_ty k
          end
       end
   | Ppat_var name ->
@@ -3960,21 +3960,24 @@ and type_expect_
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
   | Pexp_while(scond, sbody) ->
-      let cond_env =
-        if is_local_returning_expr scond then env else Env.add_region_lock env
+      let cond_env,wh_cond_region =
+        if is_local_returning_expr scond then env, false
+        else Env.add_region_lock env, true
       in
-      let cond =
+      let wh_cond =
         type_expect cond_env (mode_var ()) scond
           (mk_expected ~explanation:While_loop_conditional Predef.type_bool)
       in
-      let body_env =
-        if is_local_returning_expr sbody then env else Env.add_region_lock env
+      let body_env,wh_body_region =
+        if is_local_returning_expr sbody then env, false
+        else Env.add_region_lock env, true
       in
-      let body =
+      let wh_body =
         type_statement ~explanation:While_loop_body body_env sbody
       in
       rue {
-        exp_desc = Texp_while(cond, body);
+        exp_desc =
+          Texp_while {wh_cond; wh_cond_region; wh_body; wh_body_region};
         exp_loc = loc; exp_extra = [];
         exp_type = instance Predef.type_unit;
         exp_mode = expected_mode.mode;

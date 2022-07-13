@@ -403,10 +403,12 @@ and expression i ppf x =
       line i ppf "Texp_sequence\n";
       expression i ppf e1;
       expression i ppf e2;
-  | Texp_while (e1, e2) ->
+  | Texp_while {wh_cond; wh_cond_region; wh_body; wh_body_region} ->
       line i ppf "Texp_while\n";
-      expression i ppf e1;
-      expression i ppf e2;
+      line i ppf "cond_region %b\n" wh_cond_region;
+      expression i ppf wh_cond;
+      line i ppf "body_region %b\n" wh_body_region;
+      expression i ppf wh_body;
   | Texp_list_comprehension(e1, type_comp) ->
     line i ppf "Texp_list_comprehension\n";
     expression i ppf e1;

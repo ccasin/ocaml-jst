@@ -713,7 +713,7 @@ let rec expression : Typedtree.expression -> term_judg =
         expression e1 << Guard;
         expression e2;
       ]
-    | Texp_while (cond, body) ->
+    | Texp_while {wh_cond; wh_body} ->
       (*
         G1 |- cond: m[Dereference]
         G2 |- body: m[Guard]
@@ -721,8 +721,8 @@ let rec expression : Typedtree.expression -> term_judg =
         G1 + G2 |- while cond do body done: m
       *)
       join [
-        expression cond << Dereference;
-        expression body << Guard;
+        expression wh_cond << Dereference;
+        expression wh_body << Guard;
       ]
     | Texp_send (e1, _, eo, _) ->
       (*

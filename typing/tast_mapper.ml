@@ -323,11 +323,10 @@ let expr sub x =
           sub.expr sub exp1,
           sub.expr sub exp2
         )
-    | Texp_while (exp1, exp2) ->
-        Texp_while (
-          sub.expr sub exp1,
-          sub.expr sub exp2
-        )
+    | Texp_while wh ->
+        Texp_while { wh with wh_cond = sub.expr sub wh.wh_cond;
+                             wh_body = sub.expr sub wh.wh_body
+                   }
     | Texp_list_comprehension(e1, type_comp) ->
         Texp_list_comprehension(
           sub.expr sub e1,

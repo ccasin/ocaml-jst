@@ -585,9 +585,12 @@ and transl_exp0 ~in_new_scope ~scopes e =
   | Texp_sequence(expr1, expr2) ->
       Lsequence(transl_exp ~scopes expr1,
                 event_before ~scopes expr2 (transl_exp ~scopes expr2))
-  | Texp_while(cond, body) ->
-      Lwhile(maybe_region (transl_exp ~scopes cond),
-             event_before ~scopes body (maybe_region (transl_exp ~scopes body)))
+  | Texp_while wh ->
+      let cond = transl_exp ~scopes wh.wh_cond in
+      let body = transl_exp ~scopes wh.wh_body in
+      Lwhile((if wh.wh_cond_region then maybe_region cond else cond),
+             event_before ~scopes wh.wh_body
+               (if wh.wh_body_region then maybe_region body else body))
   | Texp_arr_comprehension (body, blocks) ->
     (*One block consists of comprehension statements connected by "and".*)
     let loc = of_location ~scopes e.exp_loc in
