@@ -564,7 +564,7 @@ let rec expression : Typedtree.expression -> term_judg =
             Guard
       in
       join ((expression body << array_mode)::(comprehension comp_types))
-    | Texp_for (_, _, low, high, _, body) ->
+    | Texp_for tf ->
       (*
         G1 |- low: m[Dereference]
         G2 |- high: m[Dereference]
@@ -573,9 +573,9 @@ let rec expression : Typedtree.expression -> term_judg =
         G1 + G2 + G3 |- for _ = low to high do body done: m
       *)
       join [
-        expression low << Dereference;
-        expression high << Dereference;
-        expression body << Guard;
+        expression tf.for_from << Dereference;
+        expression tf.for_to << Dereference;
+        expression tf.for_body << Guard;
       ]
     | Texp_constant _ ->
       empty

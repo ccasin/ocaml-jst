@@ -196,6 +196,7 @@ type error =
   | Literal_overflow of string
   | Unknown_literal of string * char
   | Illegal_letrec_pat
+  | Illegal_letrec_mutable
   | Illegal_mutable_pat
   | Illegal_letrec_expr
   | Illegal_class_expr
