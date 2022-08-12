@@ -174,6 +174,7 @@ let record_rep ppf r =
   | Record_unboxed true -> fprintf ppf "inlined(unboxed)"
   | Record_float -> fprintf ppf "float"
   | Record_extension path -> fprintf ppf "ext(%a)" Printtyp.path path
+  | Record_immediate _ -> fprintf ppf "immediate"
 ;;
 
 let block_shape ppf shape = match shape with

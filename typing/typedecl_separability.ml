@@ -67,12 +67,16 @@ type type_structure =
 
 let unboxed_of_record_repr = function
   | Record_unboxed _ -> Unboxed
-  | ( Record_regular | Record_float | Record_inlined _ | Record_extension _ ) ->
+  | ( Record_regular | Record_float | Record_inlined _ | Record_extension _
+    | Record_immediate _) ->
     Boxed
 
 let unboxed_of_variant_repr = function
-  | Variant_regular -> Boxed
+  | Variant_regular | Variant_immediate -> Boxed
   | Variant_unboxed -> Unboxed
+
+let not_void_type env ty =
+  Result.is_error (Ctype.check_type_layout env ty Type_layout.void)
 
 let demultiply_list
   : type a b. a list -> (a -> b) -> b multiplicity
@@ -81,7 +85,7 @@ let demultiply_list
   | [v] -> One (f v)
   | _::_::_ -> Several
 
-let structure : type_definition -> type_structure = fun def ->
+let structure : Env.t -> type_definition -> type_structure = fun env def ->
   match def.type_kind with
   | Type_open -> Open
   | Type_abstract _ ->
@@ -90,6 +94,9 @@ let structure : type_definition -> type_structure = fun def ->
       | Some type_expr -> Synonym type_expr
       end
   | Type_record (labels, repr) ->
+      let labels =
+        List.filter (fun {ld_type; _} -> not_void_type env ld_type) labels
+      in
       let constructors = One (
         demultiply_list labels @@ fun ld -> {
           location = ld.ld_loc;
@@ -117,6 +124,7 @@ let structure : type_definition -> type_structure = fun def ->
           in
           begin match cd.cd_args with
           | Cstr_tuple tys ->
+              let tys = List.filter (fun ty -> not_void_type env ty) tys in
               demultiply_list tys @@ fun argument_type -> {
                 location = cd.cd_loc;
                 kind = Constructor_parameter;
@@ -125,6 +133,9 @@ let structure : type_definition -> type_structure = fun def ->
                 result_type_parameter_instances;
               }
           | Cstr_record labels ->
+              let labels =
+                List.filter (fun {ld_type; _} -> not_void_type env ld_type) labels
+              in
               demultiply_list labels @@ fun ld ->
                 let argument_type = ld.ld_type in
                 {
@@ -544,7 +555,7 @@ let worst_msig decl = List.map (fun _ -> Deepsep) decl.type_params
     Note: this differs from {!Types.Separability.default_signature},
     which does not have access to the declaration and its immediacy. *)
 let msig_of_external_type env decl =
-  if Result.is_ok (Ctype.check_decl_immediate env decl Always_on_64bits)
+  if Result.is_ok (Ctype.check_decl_layout env decl Immediate64)
   then best_msig decl
   else worst_msig decl
 
@@ -679,7 +690,7 @@ let msig_of_context : decl_loc:Location.t -> parameters:type_expr list
 let check_def
   : Env.t -> type_definition -> Sep.signature
   = fun env def ->
-  match structure def with
+  match structure env def with
   | Abstract ->
       msig_of_external_type env def
   | Synonym type_expr ->

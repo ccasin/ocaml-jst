@@ -1284,35 +1284,44 @@ let rec tree_of_type_decl id decl =
   in
   let (name, args) = type_defined decl in
   let constraints = tree_of_constraints params in
-  let ty, priv, unboxed, imm =
+  let olayout_of_layout = function
+    | Any -> Olay_any
+    | Sort (Var _) -> Olay_any
+    | Sort Value -> Olay_sort Os_value
+    | Sort Void -> Olay_sort Os_int0
+    | Immediate64 -> Olay_immediate64
+    | Immediate -> Olay_immediate
+  in
+  let ty, priv, unboxed, lay =
     match decl.type_kind with
-    | Type_abstract {immediate=imm} ->
+    | Type_abstract {layout=lay} ->
         begin match ty_manifest with
-        | None -> (Otyp_abstract, Public, false, imm)
+        | None -> (Otyp_abstract, Public, false, olayout_of_layout lay)
         | Some ty ->
-            tree_of_typexp false ty, decl.type_private, false, imm
+            tree_of_typexp false ty, decl.type_private, false,
+            olayout_of_layout lay
         end
     | Type_variant (cstrs, rep) ->
         tree_of_manifest (Otyp_sum (List.map tree_of_constructor cstrs)),
         decl.type_private,
         (rep = Variant_unboxed),
-        Type_immediacy.Unknown
+        Olay_any
     | Type_record(lbls, rep) ->
         tree_of_manifest (Otyp_record (List.map tree_of_label lbls)),
         decl.type_private,
         (match rep with Record_unboxed _ -> true | _ -> false),
-        Type_immediacy.Unknown
+        Olay_any
     | Type_open ->
         tree_of_manifest Otyp_open,
         decl.type_private,
         false,
-        Type_immediacy.Unknown
+        Olay_any
   in
     { otype_name = name;
       otype_params = args;
       otype_type = ty;
       otype_private = priv;
-      otype_immediate = imm;
+      otype_layout = lay;
       otype_unboxed = unboxed;
       otype_cstrs = constraints }
 

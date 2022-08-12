@@ -161,6 +161,7 @@ let record_representation i ppf = let open Types in function
   | Record_unboxed b -> line i ppf "Record_unboxed %b\n" b
   | Record_inlined i -> line i ppf "Record_inlined %d\n" i
   | Record_extension p -> line i ppf "Record_extension %a\n" fmt_path p
+  | Record_immediate b -> line i ppf "Record_immediate %b\n" b
 
 let attribute i ppf k a =
   line i ppf "%s \"%s\"\n" k a.Parsetree.attr_name.txt;

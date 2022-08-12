@@ -191,6 +191,10 @@ and float_comparison =
 and array_kind =
     Pgenarray | Paddrarray | Pintarray | Pfloatarray
 
+and layout_rep =
+  | Value of value_kind
+  | Void
+
 and value_kind =
     Pgenval | Pfloatval | Pboxedintval of boxed_integer | Pintval
   | Pvariant of {
@@ -501,8 +505,8 @@ val shallow_map  :
   (** Rewrite each immediate sub-term with the function. *)
 
 val bind : let_kind -> Ident.t -> lambda -> lambda -> lambda
-val bind_with_value_kind:
-  let_kind -> (Ident.t * value_kind) -> lambda -> lambda -> lambda
+val bind_with_layout_rep:
+  let_kind -> (Ident.t * layout_rep) -> lambda -> lambda -> lambda
 
 val negate_integer_comparison : integer_comparison -> integer_comparison
 val swap_integer_comparison : integer_comparison -> integer_comparison

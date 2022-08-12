@@ -256,7 +256,7 @@ type type_mismatch =
   | Record_mismatch of record_mismatch
   | Variant_mismatch of variant_mismatch
   | Unboxed_representation of position
-  | Immediate of Type_immediacy.Violation.t
+  | Layout of Type_layout.Violation.t
 
 let report_label_mismatch first second ppf err =
   let pr fmt = Format.fprintf ppf fmt in
@@ -355,14 +355,12 @@ let report_type_mismatch0 first second decl ppf err =
       pr "Their internal representations differ:@ %s %s %s."
          (choose ord first second) decl
          "uses unboxed representation"
-  | Immediate violation ->
+  | Layout violation ->
       let first = StringLabels.capitalize_ascii first in
       match violation with
-      | Type_immediacy.Violation.Not_always_immediate ->
-          pr "%s is not an immediate type." first
-      | Type_immediacy.Violation.Not_always_immediate_on_64bits ->
-          pr "%s is not a type that is always immediate on 64 bit platforms."
-            first
+      | Type_layout.Violation.Not_a_sublayout (l1,l2) ->
+          pr "%s has layout %s, which is not a sublayout of %s." first
+            (Type_layout.to_string l1) (Type_layout.to_string l2)
 
 let report_type_mismatch first second decl ppf err =
   if err = Manifest then () else
@@ -425,14 +423,15 @@ and compare_variants_with_representation ~loc env params1 params2 n
   let err = compare_variants ~loc env params1 params2 n cstrs1 cstrs2 in
   match err, rep1, rep2 with
   | None, Variant_regular, Variant_regular
-  | None, Variant_unboxed, Variant_unboxed ->
-     None
+  | None, Variant_unboxed, Variant_unboxed
+  | None, Variant_immediate, Variant_immediate -> None
   | Some err, _, _ ->
      Some (Variant_mismatch err)
   | None, Variant_unboxed, Variant_regular ->
      Some (Unboxed_representation First)
   | None, Variant_regular, Variant_unboxed ->
      Some (Unboxed_representation Second)
+  | _ -> Some (Unboxed_representation First) (* CJC XXX todo generalize error *)
 
 and compare_labels env params1 params2
       (ld1 : Types.label_declaration)
@@ -502,6 +501,10 @@ let compare_records_with_representation ~loc env params1 params2 n
      | _, Record_float ->
         Some (Record_mismatch (Unboxed_float_representation Second))
 
+     | Record_immediate _, Record_immediate _ -> None
+     | Record_immediate _, _ -> failwith "CJC XXX error messages"
+     | _, Record_immediate _ -> failwith "CJC XXX error messages"
+
      | Record_regular, Record_regular
      | Record_inlined _, Record_inlined _
      | Record_extension _, Record_extension _ -> None
@@ -538,10 +541,10 @@ let type_declarations ?(equality = false) ~loc env ~mark name
   in
   if err <> None then err else
   let err = match (decl1.type_kind, decl2.type_kind) with
-      (_, Type_abstract { immediate = imm }) ->
-       (match Ctype.check_decl_immediate env decl1 imm with
+      (_, Type_abstract { layout }) ->
+       (match Ctype.check_decl_layout env decl1 layout with
         | Ok () -> None
-        | Error v -> Some (Immediate v))
+        | Error v -> Some (Layout v))
     | (Type_variant (cstrs1, rep1), Type_variant (cstrs2, rep2)) ->
         if mark then begin
           let mark usage cstrs =

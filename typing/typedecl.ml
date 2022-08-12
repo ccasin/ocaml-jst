@@ -60,7 +60,7 @@ type error =
   | Multiple_native_repr_attributes
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
-  | Immediacy of Type_immediacy.Violation.t
+  | Layout of Type_layout.Violation.t
   | Separability of Typedecl_separability.error
   | Bad_unboxed_attribute of string
   | Boxed_and_unboxed
@@ -230,6 +230,7 @@ let transl_labels env closed lbls =
          {Types.ld_id = ld.ld_id;
           ld_mutable = ld.ld_mutable;
           ld_global = gbl;
+          ld_void = false; (* Updated later *)
           ld_type = ty;
           ld_loc = ld.ld_loc;
           ld_attributes = ld.ld_attributes;
@@ -332,10 +333,12 @@ let transl_declaration env sdecl (id, uid) =
       Option.is_none unboxed_attr
     | _ -> false, false (* Not unboxable, mark as boxed *)
   in
-  let immediate = Type_immediacy.of_attributes sdecl.ptype_attributes in
+  let layout_annotation = Builtin_attributes.layout sdecl.ptype_attributes in
   let (tkind, kind) =
     match sdecl.ptype_kind with
-      | Ptype_abstract -> Ttype_abstract, Type_abstract {immediate}
+      | Ptype_abstract ->
+        let layout = Type_layout.of_layout_annotation layout_annotation in
+        Ttype_abstract, Type_abstract {layout}
       | Ptype_variant scstrs ->
         if List.exists (fun cstr -> cstr.pcd_res <> None) scstrs then begin
           match cstrs with
@@ -382,8 +385,8 @@ let transl_declaration env sdecl (id, uid) =
           Builtin_attributes.warning_scope scstr.pcd_attributes
             (fun () -> make_cstr scstr)
         in
-        let rep = if unbox then Variant_unboxed else Variant_regular in
         let tcstrs, cstrs = List.split (List.map make_cstr scstrs) in
+        let rep = if unbox then Variant_unboxed else Variant_regular in
           Ttype_variant tcstrs, Type_variant (cstrs, rep)
       | Ptype_record lbls ->
           let lbls, lbls' = transl_labels env true lbls in
@@ -396,11 +399,6 @@ let transl_declaration env sdecl (id, uid) =
           Ttype_record lbls, Type_record(lbls', rep)
       | Ptype_open -> Ttype_open, Type_open
       in
-    let kind_imm = Ctype.kind_immediacy kind in
-    begin match Type_immediacy.coerce kind_imm ~as_:immediate with
-    | Ok () -> ()
-    | Error v -> raise(Error(sdecl.ptype_loc, Immediacy v))
-    end;
     let (tman, man) = match sdecl.ptype_manifest with
         None -> None, None
       | Some sty ->
@@ -459,6 +457,7 @@ let transl_declaration env sdecl (id, uid) =
       typ_kind = tkind;
       typ_private = sdecl.ptype_private;
       typ_attributes = sdecl.ptype_attributes;
+      typ_layout_annotation = layout_annotation;
     }
 
 (* Generalize a type declaration *)
@@ -605,16 +604,74 @@ let check_coherence env loc dpath decl =
           end
       | _ -> raise(Error(loc, Definition_mismatch (ty, None)))
       end
-  | { type_kind = Type_abstract { immediate = imm };
+  | { type_kind = Type_abstract { layout };
       type_manifest = Some ty } ->
-     begin match Ctype.check_type_immediate env ty imm with
+     begin match Ctype.check_type_layout env ty layout with
      | Ok () -> ()
-     | Error v -> raise(Error(loc, Immediacy v))
+     | Error v -> raise(Error(loc, Layout v))
      end
   | { type_manifest = None } -> ()
 
 let check_abbrev env sdecl (id, decl) =
   check_coherence env sdecl.ptype_loc (Path.Pident id) decl
+
+(* Infer more precise layout and which fields are void *)
+let update_decl_layout env decl =
+  let update_label_voids lbls =
+    let lbls, imm =
+      List.fold_left (fun (lbls, all_void) lbl ->
+        match Ctype.check_type_layout env lbl.Types.ld_type Type_layout.void with
+        | Ok () -> ({ lbl with ld_void = true } :: lbls, all_void)
+        | Error _ -> (lbl :: lbls, false))
+        ([], true) lbls
+    in
+    List.rev lbls, imm
+  in
+  let update_cstr_voids cstrs =
+    let cstrs, imm =
+      List.fold_left (fun (cstrs, all_void) cstr ->
+        match cstr with
+        | {Types.cd_args = Cstr_record lbls} ->
+            let (lbls, imm) = update_label_voids lbls in
+            { cstr with Types.cd_args = Cstr_record lbls } :: cstrs,
+            imm && all_void
+        | {Types.cd_args = Cstr_tuple typs} ->
+            let imm =
+              List.for_all (fun ty ->
+                Result.is_ok (Ctype.check_type_layout env ty
+                                Type_layout.void))
+                typs
+            in
+            cstr :: cstrs,
+            imm && all_void)
+        ([], true) cstrs
+    in
+    (List.rev cstrs, imm)
+  in
+  match decl.type_kind with
+  | Type_abstract _ | Type_open -> decl
+  | Type_record (lbls, rep) ->
+      let lbls, imm = update_label_voids lbls in
+      let rep =
+        match imm, rep with
+        | _, (Record_unboxed _ | Record_float) -> rep
+        | _, (Record_inlined _ | Record_extension _) -> assert false
+        | true, (Record_regular | Record_immediate _) -> Record_immediate false
+        | false, (Record_regular | Record_immediate _) -> rep
+      in
+      { decl with type_kind = Type_record (lbls, rep) }
+  | Type_variant (cstrs, rep) ->
+      let cstrs, imm = update_cstr_voids cstrs in
+      let rep =
+        match imm, rep with
+        | _, Variant_unboxed -> rep
+        | true, (Variant_regular | Variant_immediate) -> Variant_regular
+        | false, (Variant_regular | Variant_immediate) -> rep
+      in
+      { decl with type_kind = Type_variant (cstrs, rep) }
+
+let update_decls_layout env decls =
+  List.map (fun (id, decl) -> (id, update_decl_layout env decl)) decls
 
 (* Check that recursion is well-founded *)
 
@@ -938,13 +995,23 @@ let transl_type_decl env rec_flag sdecl_list =
     sdecl_list tdecls;
   (* Check that constraints are enforced *)
   List.iter2 (check_constraints new_env) sdecl_list decls;
+  List.iter (fun tdecl ->
+    (* let kind_layout = Ctype.kind_layout env tdecl.typ_type.type_kind in *)
+    let layout = Type_layout.of_layout_annotation tdecl.typ_layout_annotation in
+    begin
+      match Ctype.check_decl_layout env tdecl.typ_type layout with
+      | Ok () -> ()
+      | Error v -> raise(Error(tdecl.typ_loc, Layout v))
+    end) tdecls;
   (* Add type properties to declarations *)
+  (* CR ccasinghino: maybe improve immediacy values *)
   let decls =
     try
       decls
       |> name_recursion_decls sdecl_list
       |> Typedecl_variance.update_decls env sdecl_list
       |> Typedecl_separability.update_decls env
+      |> update_decls_layout env
     with
     | Typedecl_variance.Error (loc, err) ->
         raise (Error (loc, Variance err))
@@ -962,6 +1029,13 @@ let transl_type_decl env rec_flag sdecl_list =
         { tdecl with typ_type = decl }
       ) tdecls decls
   in
+  (* Check layout annotations *)
+  List.iter (fun tdecl ->
+    let layout = Type_layout.of_layout_annotation tdecl.typ_layout_annotation in
+    match Ctype.check_decl_layout env tdecl.typ_type layout with
+    | Ok () -> ()
+    | Error _ -> failwith "CJC XXX")
+    tdecls;
   (* Done *)
   (final_decls, final_env)
 
@@ -1564,6 +1638,7 @@ let transl_with_constraint id row_path ~sig_env ~sig_decl ~outer_env sdecl =
     typ_kind = Ttype_abstract;
     typ_private = sdecl.ptype_private;
     typ_attributes = sdecl.ptype_attributes;
+    typ_layout_annotation = Builtin_attributes.layout sdecl.ptype_attributes;
   }
 
 (* Approximate a type declaration: just make all types abstract *)
@@ -1870,15 +1945,9 @@ let report_error ppf = function
          a direct argument or result of the primitive,@ \
          it should not occur deeply into its type.@]"
         (match kind with Unboxed -> "@unboxed" | Untagged -> "@untagged")
-  | Immediacy violation ->
-      fprintf ppf "@[%a@]" Format.pp_print_text
-        (match violation with
-         | Type_immediacy.Violation.Not_always_immediate ->
-             "Types marked with the immediate attribute must be \
-              non-pointer types like int or bool."
-         | Type_immediacy.Violation.Not_always_immediate_on_64bits ->
-             "Types marked with the immediate64 attribute must be \
-              produced using the Stdlib.Sys.Immediate64.Make functor.")
+  | Layout (Type_layout.Violation.Not_a_sublayout (l1,l2)) ->
+      fprintf ppf "@[This type has layout %s, which is not a sublayout of %s.@]"
+        (Type_layout.to_string l1) (Type_layout.to_string l2)
   | Bad_unboxed_attribute msg ->
       fprintf ppf "@[This type cannot be unboxed because@ %s.@]" msg
   | Separability (Typedecl_separability.Non_separable_evar evar) ->

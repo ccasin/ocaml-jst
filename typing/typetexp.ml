@@ -684,6 +684,7 @@ let globalize_used_variables env fixed =
       !r
 
 let transl_simple_type env fixed mode styp =
+  (* CJC XXX TODO : Force type to be of kind (sort _) *)
   univars := []; used_variables := TyVarMap.empty;
   let typ = transl_type env (if fixed then Fixed else Extensible) mode styp in
   globalize_used_variables env fixed ();

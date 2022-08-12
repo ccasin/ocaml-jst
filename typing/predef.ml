@@ -191,7 +191,7 @@ let common_initial_env add_type add_extension empty_env =
         ext_uid = Uid.of_predef_id id;
       }
   in
-  let kind_immediate = Type_abstract { immediate = Always } in
+  let kind_immediate = Type_abstract { layout = Immediate } in
   add_extension ident_match_failure
                          [newgenty (Ttuple[type_string; type_int; type_int])] (
   add_extension ident_out_of_memory [] (

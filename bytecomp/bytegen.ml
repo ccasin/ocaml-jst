@@ -184,7 +184,7 @@ let rec size_of_lambda env = function
     when check_recordwith_updates id body ->
       begin match kind with
       | Record_regular | Record_inlined _ -> RHS_block size
-      | Record_unboxed _ -> assert false
+      | Record_unboxed _ | Record_immediate _ -> assert false
       | Record_float -> RHS_floatblock size
       | Record_extension _ -> RHS_block (size + 1)
       end

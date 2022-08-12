@@ -658,6 +658,7 @@ let closed_parameterized_type params ty =
   ok
 
 let closed_type_decl decl =
+  (* CJC XXX TODO: needs to default sort variables to value *)
   try
     List.iter mark_type decl.type_params;
     begin match decl.type_kind with
@@ -5114,20 +5115,13 @@ let get_unboxed_type_representation env ty =
   (* Do not give too much fuel: PR#7424 *)
   get_unboxed_type_representation env ty 100
 
-let kind_immediacy = function
-  | Type_open | Type_record _ -> Type_immediacy.Unknown
-  | Type_abstract { immediate } -> immediate
-  | Type_variant (cstrs, _) ->
-     if List.exists (fun c -> c.Types.cd_args <> Types.Cstr_tuple []) cstrs
-     then Type_immediacy.Unknown
-     else Type_immediacy.Always
 
-let get_type_immediate_head env ty =
+let get_type_layout_head env ty =
   match (repr ty).desc with
   | Tconstr(p, _args, _abbrev) ->
      begin match Env.find_type p env with
-     | { type_kind = k; _ } -> kind_immediacy k
-     | exception Not_found -> Type_immediacy.Unknown
+     | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
+     | exception Not_found -> Any
      end
   | Tvariant row ->
       let row = Btype.row_repr row in
@@ -5139,36 +5133,41 @@ let get_type_immediate_head env ty =
             | _, (Rpresent (Some _) | Reither (false, _, _, _)) -> true
             | _ -> false)
           row.row_fields
-      then Type_immediacy.Unknown
-      else Type_immediacy.Always
-  | _ -> Type_immediacy.Unknown
+      then Any
+      else Immediate
+  | _ -> Any
 
-let check_type_immediate env ty imm =
-  match Type_immediacy.coerce (get_type_immediate_head env ty) ~as_:imm with
+let check_type_layout env ty layout =
+  match Type_layout.sublayout (get_type_layout_head env ty) layout with
   | Ok () -> Ok ()
   | Error _ ->
     let ty = get_unboxed_type_representation env ty in
-    Type_immediacy.coerce (get_type_immediate_head env ty) ~as_:imm
+    Type_layout.sublayout (get_type_layout_head env ty) layout
 
-let check_decl_immediate env decl imm =
+let check_decl_layout env decl layout =
   match decl with
   | { type_kind = ( Type_variant ([{cd_args = Cstr_tuple [arg]; _}], Variant_unboxed)
                   | Type_variant ([{cd_args = Cstr_record [{ld_type=arg; _}]; _}],
                                   Variant_unboxed)
                   | Type_record ([{ld_type=arg; _}], Record_unboxed _)); _ } ->
-     check_type_immediate env arg imm
-  | { type_kind; type_manifest = None; _ } ->
-     Type_immediacy.coerce (kind_immediacy type_kind) ~as_:imm
-  | { type_kind; type_manifest = Some ty; _ } ->
-     (* Check the kind first, in case of missing cmis *)
-     match Type_immediacy.coerce (kind_immediacy type_kind) ~as_:imm with
-     | Ok () -> Ok ()
-     | _ -> check_type_immediate env ty imm
+     check_type_layout env arg layout
+  | { type_kind; type_manifest ; _ } ->
+      match Type_layout.sublayout
+              (Type_layout.layout_bound_of_kind type_kind) layout with
+      | Ok () -> Ok ()
+      | Error _ as err ->
+          match type_manifest with
+          | None -> err
+          | Some ty -> check_type_layout env ty layout
 
 let maybe_pointer_type env typ =
-  let imm : Type_immediacy.t =
+  let layout : Type_layout.t =
     (* In bytecode, we don't know at compile time whether we are
        targeting 32 or 64 bits. *)
-    if !Clflags.native_code && Sys.word_size = 64 then Always_on_64bits
-    else Always in
-  Result.is_error (check_type_immediate env typ imm)
+    if !Clflags.native_code && Sys.word_size = 64 then Immediate64
+    else Immediate in
+  Result.is_error (check_type_layout env typ layout)
+
+let is_void_type env typ =
+  Result.is_error (check_type_layout env typ Type_layout.void)
+

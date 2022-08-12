@@ -344,8 +344,11 @@ and transl_exp1 ~scopes ~in_new_scope e =
 and transl_exp0 ~in_new_scope ~scopes e =
   match e.exp_desc with
   | Texp_ident(path, _, desc, kind) ->
-      transl_ident (of_location ~scopes e.exp_loc)
-        e.exp_env e.exp_type path desc kind
+      if Typeopt.is_void e then
+        Lconst const_unit
+      else
+        transl_ident (of_location ~scopes e.exp_loc)
+          e.exp_env e.exp_type path desc kind
   | Texp_constant cst ->
       Lconst(Const_base cst)
   | Texp_let(rec_flag, pat_expr_list, body) ->
@@ -417,11 +420,15 @@ and transl_exp0 ~in_new_scope ~scopes e =
       transl_match ~scopes e arg pat_expr_list partial
   | Texp_try(body, pat_expr_list) ->
       let id = Typecore.name_cases "exn" pat_expr_list in
-      let k = Typeopt.value_kind e.exp_env e.exp_type in
+      let l = Typeopt.value_kind e.exp_env e.exp_type in
+      let k =
+        match l with
+        | Value k -> k
+        | Void -> Pintval
+      in
       Ltrywith(transl_exp ~scopes body, id,
-               Matching.for_trywith ~scopes k e.exp_loc (Lvar id)
-                 (transl_cases_try ~scopes pat_expr_list),
-               Typeopt.value_kind e.exp_env e.exp_type)
+               Matching.for_trywith ~scopes l e.exp_loc (Lvar id)
+                 (transl_cases_try ~scopes pat_expr_list), k)
   | Texp_tuple el ->
       let ll, shape = transl_list_with_shape ~scopes el in
       begin try
@@ -483,41 +490,49 @@ and transl_exp0 ~in_new_scope ~scopes e =
         fields representation extended_expression
   | Texp_field(arg, _, lbl) ->
       let targ = transl_exp ~scopes arg in
-      let sem =
-        match lbl.lbl_mut with
-        | Immutable -> Reads_agree
-        | Mutable -> Reads_vary
-      in
-      begin match lbl.lbl_repres with
-          Record_regular | Record_inlined _ ->
-          Lprim (Pfield (lbl.lbl_pos, sem), [targ],
-                 of_location ~scopes e.exp_loc)
-        | Record_unboxed _ -> targ
-        | Record_float ->
-          let mode = transl_exp_mode e in
-          Lprim (Pfloatfield (lbl.lbl_pos, sem, mode), [targ],
-                 of_location ~scopes e.exp_loc)
-        | Record_extension _ ->
-          Lprim (Pfield (lbl.lbl_pos + 1, sem), [targ],
-                 of_location ~scopes e.exp_loc)
+      if Typeopt.is_void e then
+        Lsequence (targ, Lconst const_unit)
+      else begin
+        let sem =
+          match lbl.lbl_mut with
+          | Immutable -> Reads_agree
+          | Mutable -> Reads_vary
+        in
+        match lbl.lbl_repres with
+            Record_regular | Record_inlined _ ->
+            Lprim (Pfield (lbl.lbl_pos, sem), [targ],
+                   of_location ~scopes e.exp_loc)
+          | Record_unboxed _ -> targ
+          | Record_float ->
+            let mode = transl_exp_mode e in
+            Lprim (Pfloatfield (lbl.lbl_pos, sem, mode), [targ],
+                   of_location ~scopes e.exp_loc)
+          | Record_extension _ ->
+            Lprim (Pfield (lbl.lbl_pos + 1, sem), [targ],
+                   of_location ~scopes e.exp_loc)
+          | Record_immediate _ -> assert false
       end
   | Texp_setfield(arg, _, lbl, newval) ->
-      let mode =
-        let arg_mode = Btype.Value_mode.regional_to_local_alloc arg.exp_mode in
-        Assignment (transl_alloc_mode arg_mode)
-      in
-      let access =
-        match lbl.lbl_repres with
-          Record_regular
-        | Record_inlined _ ->
-          Psetfield(lbl.lbl_pos, maybe_pointer newval, mode)
-        | Record_unboxed _ -> assert false
-        | Record_float -> Psetfloatfield (lbl.lbl_pos, mode)
-        | Record_extension _ ->
-          Psetfield (lbl.lbl_pos + 1, maybe_pointer newval, mode)
-      in
-      Lprim(access, [transl_exp ~scopes arg; transl_exp ~scopes newval],
-            of_location ~scopes e.exp_loc)
+      if lbl.lbl_pos = lbl_pos_void then
+        Lsequence (transl_exp ~scopes newval, Lconst const_unit)
+      else begin
+        let mode =
+          let arg_mode = Btype.Value_mode.regional_to_local_alloc arg.exp_mode in
+          Assignment (transl_alloc_mode arg_mode)
+        in
+        let access =
+          match lbl.lbl_repres with
+            Record_regular
+          | Record_inlined _ ->
+            Psetfield(lbl.lbl_pos, maybe_pointer newval, mode)
+          | Record_unboxed _ -> assert false
+          | Record_float -> Psetfloatfield (lbl.lbl_pos, mode)
+          | Record_extension _ ->
+            Psetfield (lbl.lbl_pos + 1, maybe_pointer newval, mode)
+        in
+        Lprim(access, [transl_exp ~scopes arg; transl_exp ~scopes newval],
+              of_location ~scopes e.exp_loc)
+      end
   | Texp_array expr_list ->
       let kind = array_kind e in
       let ll = transl_list ~scopes expr_list in

@@ -230,9 +230,8 @@ end = struct
       | `Var (id, s) -> continue p (`Alias (Patterns.omega, id, s))
       | `Alias (p, id, _) ->
           let k = Typeopt.value_kind p.pat_env p.pat_type in
-          aux
-            ( (General.view p, patl),
-              bind_with_value_kind Alias (id, k) arg action )
+          let action = bind_with_layout_rep Alias (id,k) arg action in
+          aux ((General.view p, patl), action)
       | `Record ([], _) as view -> stop p view
       | `Record (lbls, closed) ->
           let full_view = `Record (all_record_args lbls, closed) in
@@ -885,7 +884,7 @@ type 'row pattern_matching = {
 type handler = {
   provenance : matrix;
   exit : int;
-  vars : (Ident.t * Lambda.value_kind) list;
+  vars : (Ident.t * Lambda.layout_rep) list;
   pm : initial_clause pattern_matching
 }
 
@@ -3617,7 +3616,7 @@ let for_let ~scopes loc param pat body_kind body =
   | Tpat_var (id, _) ->
       (* fast path, and keep track of simple bindings to unboxable numbers *)
       let k = Typeopt.value_kind pat.pat_env pat.pat_type in
-      Llet (Strict, k, id, param, body)
+      bind_with_layout_rep Strict k id param body
   | _ ->
       let opt = ref false in
       let nraise = next_raise_count () in

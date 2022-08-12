@@ -193,8 +193,8 @@ let rec build_object_init ~scopes cl_table obj params inh_init obj_init cl =
                     return = Pgenval;
                     attr = default_function_attribute;
                     loc = of_location ~scopes pat.pat_loc;
-                    body = Matching.for_function ~scopes Pgenval pat.pat_loc
-                             None (Lvar param) [pat, rem] partial;
+                    body = Matching.for_function ~scopes Pgenval
+                             pat.pat_loc None (Lvar param) [pat, rem] partial;
                     mode = alloc_heap;
                     region = true }
        in

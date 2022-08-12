@@ -400,6 +400,7 @@ val reset_reified_var_counter: unit -> unit
 
 val maybe_pointer_type : Env.t -> type_expr -> bool
        (* True if type is possibly pointer, false if definitely not a pointer *)
+val is_void_type : Env.t -> type_expr -> bool
 
 (* Stubs *)
 val package_subtype :
@@ -410,6 +411,8 @@ val mcomp : Env.t -> type_expr -> type_expr -> unit
 
 val get_unboxed_type_representation : Env.t -> type_expr -> type_expr
 
-val kind_immediacy : type_kind -> Type_immediacy.t
-val check_decl_immediate : Env.t -> type_declaration -> Type_immediacy.t -> (unit, Type_immediacy.Violation.t) result
-val check_type_immediate : Env.t -> type_expr -> Type_immediacy.t -> (unit, Type_immediacy.Violation.t) result
+(* val kind_layout : type_kind -> Type_layout.t *)
+val check_decl_layout : Env.t -> type_declaration -> Type_layout.t
+  -> (unit, Type_layout.Violation.t) result
+val check_type_layout : Env.t -> type_expr -> Type_layout.t
+  -> (unit, Type_layout.Violation.t) result

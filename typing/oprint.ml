@@ -708,11 +708,16 @@ and print_out_type_decl kwd ppf td =
     Asttypes.Private -> fprintf ppf " private"
   | Asttypes.Public -> ()
   in
-  let print_immediate ppf =
-    match td.otype_immediate with
-    | Unknown -> ()
-    | Always -> fprintf ppf " [%@%@immediate]"
-    | Always_on_64bits -> fprintf ppf " [%@%@immediate64]"
+  let print_sort ppf = function
+    | Os_value -> fprintf ppf " [%@%@value]"
+    | Os_int0 -> fprintf ppf " [%@%@int0]"
+  in
+  let print_layout ppf =
+    match td.otype_layout with
+    | Olay_any -> ()
+    | Olay_sort osort -> print_sort ppf osort
+    | Olay_immediate64 -> fprintf ppf " [%@%@immediate64]"
+    | Olay_immediate -> fprintf ppf " [%@%@immediate]"
   in
   let print_unboxed ppf =
     if td.otype_unboxed then fprintf ppf " [%@%@unboxed]" else ()
@@ -742,7 +747,7 @@ and print_out_type_decl kwd ppf td =
     print_name_params
     print_out_tkind ty
     print_constraints
-    print_immediate
+    print_layout
     print_unboxed
 
 and print_out_constr ppf (name, tyl,ret_type_opt) =

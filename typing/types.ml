@@ -27,6 +27,7 @@ type type_expr =
 
 and type_desc =
     Tvar of string option
+  (*    Tvar of { name : string option; mutable layout : Type_layout.t } *)
   | Tarrow of arrow_desc * type_expr * type_expr * commutable
   | Ttuple of type_expr list
   | Tconstr of Path.t * type_expr list * abbrev_memo ref
@@ -37,6 +38,7 @@ and type_desc =
   | Tsubst of type_expr         (* for copying *)
   | Tvariant of row_desc
   | Tunivar of string option
+  (*  | Tunivar of { name : string option; layout : Type_layout.t } *)
   | Tpoly of type_expr * type_expr list
   | Tpackage of Path.t * Longident.t list * type_expr list
 
@@ -57,21 +59,32 @@ and alloc_mode =
   | Amode of alloc_mode_const
   | Amodevar of alloc_mode_var
 
+and sort =
+  | Var of sort option ref
+  | Value
+  | Void
+
+and layout =
+  | Any
+  | Sort of sort
+  | Immediate64
+  | Immediate
+
 and row_desc =
-    { row_fields: (label * row_field) list;
-      row_more: type_expr;
-      row_bound: unit;
-      row_closed: bool;
-      row_fixed: fixed_explanation option;
-      row_name: (Path.t * type_expr list) option }
+  { row_fields: (label * row_field) list;
+    row_more: type_expr;
+    row_bound: unit;
+    row_closed: bool;
+    row_fixed: fixed_explanation option;
+    row_name: (Path.t * type_expr list) option }
 and fixed_explanation =
   | Univar of type_expr | Fixed_private | Reified of Path.t | Rigid
 and row_field =
     Rpresent of type_expr option
   | Reither of bool * type_expr list * bool * row_field option ref
-        (* 1st true denotes a constant constructor *)
-        (* 2nd true denotes a tag in a pattern matching, and
-           is erased later *)
+  (* 1st true denotes a constant constructor *)
+  (* 2nd true denotes a tag in a pattern matching, and
+     is erased later *)
   | Rabsent
 
 and abbrev_memo =
@@ -251,20 +264,24 @@ type type_declaration =
     type_attributes: Parsetree.attributes;
     type_unboxed_default: bool;
     type_uid: Uid.t;
- }
+  }
 
 and type_kind =
-    Type_abstract of {immediate: Type_immediacy.t}
+    Type_abstract of {layout: layout}
   | Type_record of label_declaration list  * record_representation
   | Type_variant of constructor_declaration list * variant_representation
   | Type_open
 
+(* CR ccasinghino: record representation should contain enough information to project
+   every field, which is no longer the case in the presence of void fields (and really not
+   the case when more layouts) *)
 and record_representation =
     Record_regular                      (* All fields are boxed / tagged *)
   | Record_float                        (* All fields are floats *)
   | Record_unboxed of bool    (* Unboxed single-field record, inlined or not *)
   | Record_inlined of int               (* Inlined record *)
   | Record_extension of Path.t          (* Inlined record under extension *)
+  | Record_immediate of bool   (* inlined or not *)
 
 and global_flag =
   | Global
@@ -274,12 +291,14 @@ and global_flag =
 and variant_representation =
     Variant_regular          (* Constant or boxed constructors *)
   | Variant_unboxed          (* One unboxed single-field constructor *)
+  | Variant_immediate
 
 and label_declaration =
   {
     ld_id: Ident.t;
     ld_mutable: mutable_flag;
     ld_global: global_flag;
+    ld_void: bool;
     ld_type: type_expr;
     ld_loc: Location.t;
     ld_attributes: Parsetree.attributes;
@@ -447,7 +466,8 @@ let equal_tag t1 t2 =
   | Cstr_unboxed, Cstr_unboxed -> true
   | Cstr_extension (path1, b1), Cstr_extension (path2, b2) ->
       Path.same path1 path2 && b1 = b2
-  | (Cstr_constant _|Cstr_block _|Cstr_unboxed|Cstr_extension _), _ -> false
+  | (Cstr_constant _|Cstr_block _|Cstr_unboxed|Cstr_extension _), _ ->
+      false
 
 let may_equal_constr c1 c2 =
   c1.cstr_arity = c2.cstr_arity
@@ -458,7 +478,7 @@ let may_equal_constr c1 c2 =
      | tag1, tag2 ->
          equal_tag tag1 tag2)
 
-let kind_abstract = Type_abstract { immediate = Unknown }
+let kind_abstract = Type_abstract { layout = Any }
 
 let decl_is_abstract decl =
   match decl.type_kind with
@@ -478,7 +498,9 @@ type label_description =
     lbl_loc: Location.t;
     lbl_attributes: Parsetree.attributes;
     lbl_uid: Uid.t;
-   }
+  }
+
+let lbl_pos_void = -1
 
 let rec bound_value_identifiers = function
     [] -> []
