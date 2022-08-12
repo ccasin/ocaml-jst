@@ -272,9 +272,9 @@ let proper_abbrevs path tl abbrev =
 let newty2             = Btype.newty2
 let newty desc         = newty2 !current_level desc
 
-let newvar ?name ()         = newty2 !current_level (Tvar name)
-let newvar2 ?name level     = newty2 level (Tvar name)
-let new_global_var ?name () = newty2 !global_level (Tvar name)
+let newvar ?name layout          = newty2 !current_level (Tvar (name, ref layout))
+let newvar2 ?name level layout   = newty2 level (Tvar (name, ref layout))
+let new_global_var ?name layout  = newty2 !global_level (Tvar (name, ref layout))
 
 let newobj fields      = newty (Tobject (fields, ref None))
 
@@ -1184,10 +1184,11 @@ let rec copy ?partial ?keep_names scope ty =
             if keep then ty.level else !current_level
           else generic_level
     in
-    if forget <> generic_level then newty2 forget (Tvar None) else
+    if forget <> generic_level then newty2 forget (Tvar (None, ref Any)) else
     let desc = ty.desc in
     For_copy.save_desc scope ty desc;
-    let t = newvar() in          (* Stub *)
+    let t = newvar Any in          (* Stub *)
+    (* CJC XXX do we need to get info from the type being copied for the layout here *)
     set_scope t ty.scope;
     ty.desc <- Tsubst t;
     t.desc <-
@@ -1249,7 +1250,7 @@ let rec copy ?partial ?keep_names scope ty =
                     let more' =
                       if more.id != more'.id then more' else
                       let lv = if keep then more.level else !current_level in
-                      newty2 lv (Tvar None)
+                      newty2 lv (Tvar (None, ref Any))
                     in
                     let not_reither (_, f) =
                       match row_field_repr f with
@@ -1320,11 +1321,11 @@ let get_new_abstract_name s =
   if index = 0 && s <> "" && s.[String.length s - 1] <> '$' then s else
   Printf.sprintf "%s%d" s index
 
-let new_declaration expansion_scope manifest =
+let new_declaration expansion_scope manifest layout =
   {
     type_params = [];
     type_arity = 0;
-    type_kind = Types.kind_abstract;
+    type_kind = Type_abstract {layout};
     type_private = Public;
     type_manifest = manifest;
     type_variance = [];
@@ -1338,7 +1339,7 @@ let new_declaration expansion_scope manifest =
   }
 
 let existential_name cstr ty = match repr ty with
-  | {desc = Tvar (Some name)} -> "$" ^ cstr.cstr_name ^ "_'" ^ name
+  | {desc = Tvar (Some name, _)} -> "$" ^ cstr.cstr_name ^ "_'" ^ name
   | _ -> "$" ^ cstr.cstr_name
 
 let instance_constructor ?in_pattern cstr =
@@ -1510,7 +1511,8 @@ let instance_poly' cleanup_scope ~keep_names fixed univars sch =
   let univars = List.map repr univars in
   let copy_var ty =
     match ty.desc with
-      Tunivar name -> if keep_names then newty (Tvar name) else newvar ()
+      Tunivar (name, layout) ->
+        if keep_names then newty (Tvar name, ref layout) else newvar ()
     | _ -> assert false
   in
   let vars = List.map copy_var univars in
@@ -1807,6 +1809,112 @@ let expand_head_opt env ty =
   with Cannot_expand | Unify _ -> (* expand_head shall never fail *)
     Btype.backtrack snap;
     repr ty
+
+(* We use expand_head_opt version of expand_head to get access
+   to the manifest type of private abbreviations. *)
+let rec get_unboxed_type_representation env ty fuel =
+  if fuel < 0 then ty else
+  let ty = repr (expand_head_opt env ty) in
+  match ty.desc with
+  | Tconstr (p, args, _) ->
+    begin match Env.find_type p env with
+    | exception Not_found -> ty
+    | {type_params; type_kind =
+         Type_record ([{ld_type = ty2; _}], Record_unboxed _)
+       | Type_variant ([{cd_args = Cstr_tuple [ty2]; _}], Variant_unboxed)
+       | Type_variant ([{cd_args = Cstr_record [{ld_type = ty2; _}]; _}],
+                       Variant_unboxed)}
+      ->
+        let ty2 = match ty2.desc with Tpoly (t, _) -> t | _ -> ty2 in
+        get_unboxed_type_representation env
+          (apply env type_params ty2 args) (fuel - 1)
+    | _ -> ty
+    end
+  | _ -> ty
+
+let get_unboxed_type_representation env ty =
+  (* Do not give too much fuel: PR#7424 *)
+  get_unboxed_type_representation env ty 100
+
+let constrain_type_layout ~fixed env ty1 layout2 =
+  let rec constrain_type_layout_head ty1 =
+  match (repr ty1).desc with
+  | Tconstr(p1, _, _) ->
+      let layout1 =
+        begin match Env.find_type p1 env with
+        | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
+        | exception Not_found -> Any
+        end
+      in
+      Type_layout.sublayout layout1 layout2
+  | Tvariant row ->
+      let layout1 =
+        let row = Btype.row_repr row in
+        (* if all labels are devoid of arguments, not a pointer *)
+        if
+          not row.row_closed
+          || List.exists
+            (function
+              | _, (Rpresent (Some _) | Reither (false, _, _, _)) -> true
+              | _ -> false)
+            row.row_fields
+        then Any
+        else Immediate
+      in
+      Type_layout.sublayout layout1 layout2
+  | Tvar (_, rlayout1) ->
+      if fixed then
+        Type_layout.sublayout !rlayout1 layout2
+      else
+        let layout = Type_layout.intersection !rlayout1 layout2 in
+        rlayout1 := layout
+  | Tarrow _ -> Type_layout.sublayout Type_layout.value layout2
+  | Ttuple _ -> Type_layout.sublayout Type_layout.value layout2
+  | Tobject _ -> Type_layout.sublayout Type_layout.value layout2
+  | Tfield _ -> Type_layout.sublayout Type_layout.value layout2
+  | Tnil -> Type_layout.sublayout Type_layout.value layout2
+  | (Tlink _ | Tsubst _) -> assert false
+  | Tunivar (_, layout1) -> Type_layout.sublayout layout1 layout2
+  | Tpoly (ty, _) -> constrain_type_layout_head ty
+  | Tpackage _ -> Type_layout.sublayout Type_layout.value layout2
+  in
+  match ty with
+  | Tconstr(p, _args, _abbrev) -> begin
+      let layout_bound =
+        begin match Env.find_type p env with
+        | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
+        | exception Not_found -> Any
+        end
+      in
+      match Type_layout.sublayout layout_bound layout with
+      | Ok () -> Ok ()
+      | Error _ ->
+        let ty = get_unboxed_type_representation env ty in
+        constrain_type_layout_head ty
+    end
+  | _ -> constrain_type_layout_head ty
+
+let check_type_layout env ty layout =
+  constrain_type_layout ~fixed:true env ty layout
+
+let constrain_type_layout env ty layout =
+  constrain_type_layout ~fixed:false env ty layout
+
+let check_decl_layout env decl layout =
+  match decl with
+  | { type_kind = ( Type_variant ([{cd_args = Cstr_tuple [arg]; _}], Variant_unboxed)
+                  | Type_variant ([{cd_args = Cstr_record [{ld_type=arg; _}]; _}],
+                                  Variant_unboxed)
+                  | Type_record ([{ld_type=arg; _}], Record_unboxed _)); _ } ->
+     check_type_layout env arg layout
+  | { type_kind; type_manifest ; _ } ->
+      match Type_layout.sublayout
+              (Type_layout.layout_bound_of_kind type_kind) layout with
+      | Ok () -> Ok ()
+      | Error _ as err ->
+          match type_manifest with
+          | None -> err
+          | Some ty -> check_type_layout env ty layout
 
 (* Make sure that the type parameters of the type constructor [ty]
    respect the type constraints *)
@@ -2120,9 +2228,9 @@ let polyfy env ty vars =
   let subst_univar scope ty =
     let ty = repr ty in
     match ty.desc with
-    | Tvar name when ty.level = generic_level ->
+    | Tvar (name,layout) when ty.level = generic_level ->
         For_copy.save_desc scope ty ty.desc;
-        let t = newty (Tunivar name) in
+        let t = newty (Tunivar (name, !layout)) in
         ty.desc <- Tsubst t;
         Some t
     | _ -> None
@@ -2219,14 +2327,14 @@ let get_gadt_equations_level () =
    They need to be removed using this function *)
 let reify env t =
   let fresh_constr_scope = get_gadt_equations_level () in
-  let create_fresh_constr lev name =
+  let create_fresh_constr lev name layout =
     let name = match name with Some s -> "$'"^s | _ -> "$" in
     let path =
       Path.Pident
         (Ident.create_scoped ~scope:fresh_constr_scope
            (get_new_abstract_name name))
     in
-    let decl = new_declaration fresh_constr_scope None in
+    let decl = new_declaration fresh_constr_scope None layout in
     let new_env = Env.add_local_type path decl !env in
     let t = newty2 lev (Tconstr (path,[],ref Mnil))  in
     env := new_env;
@@ -2238,8 +2346,8 @@ let reify env t =
     if TypeSet.mem ty !visited then () else begin
       visited := TypeSet.add ty !visited;
       match ty.desc with
-        Tvar o ->
-          let path, t = create_fresh_constr ty.level o in
+        Tvar (o,layout) ->
+          let path, t = create_fresh_constr ty.level o !layout in
           link_type ty t;
           if ty.level < fresh_constr_scope then
             raise Trace.(Unify [escape (Constructor path)])
@@ -2532,7 +2640,7 @@ let add_gadt_equation env source destination =
     let expansion_scope =
       max (Path.scope source) (get_gadt_equations_level ())
     in
-    let decl = new_declaration expansion_scope (Some destination) in
+    let decl = new_declaration expansion_scope (Some destination) Any in
     env := Env.add_local_type source decl !env;
     cleanup_abbrev ()
   end
@@ -2639,7 +2747,7 @@ let unify_eq t1 t2 =
   | Pattern ->
       TypePairs.mem unify_eq_set (order_type_pair t1 t2)
 
-let unify1_var env t1 t2 =
+let unify1_var env t1 layout t2 =
   assert (is_Tvar t1);
   occur env t1 t2;
   occur_univar env t2;
@@ -2647,7 +2755,8 @@ let unify1_var env t1 t2 =
   link_type t1 t2;
   try
     update_level env t1.level t2;
-    update_scope t1.scope t2
+    update_scope t1.scope t2;
+    constrain_type_layout env t2 layout
   with Unify _ as e ->
     t1.desc <- d1;
     raise e
@@ -2665,7 +2774,6 @@ let rec unify (env:Env.t ref) t1 t2 =
   let t2 = repr t2 in
   if unify_eq t1 t2 then () else
   let reset_tracing = check_trace_gadt_instances !env in
-
   try
     type_changed := true;
     begin match (t1.desc, t2.desc) with
@@ -2673,10 +2781,10 @@ let rec unify (env:Env.t ref) t1 t2 =
         unify2 env t1 t2
     | (Tconstr _, Tvar _) when deep_occur t2 t1 ->
         unify2 env t1 t2
-    | (Tvar _, _) ->
-        unify1_var !env t1 t2
-    | (_, Tvar _) ->
-        unify1_var !env t2 t1
+    | (Tvar (_, layout), _) ->
+        unify1_var !env t1 !layout t2
+    | (_, Tvar (_, layout)) ->
+        unify1_var !env t2 !layout t1
     | (Tunivar _, Tunivar _) ->
         unify_univar t1 t2 !univar_pairs;
         update_level !env t1.level t2;
@@ -2753,13 +2861,15 @@ and unify3 env t1 t1' t2 t2' =
     (Tunivar _, Tunivar _) ->
       unify_univar t1' t2' !univar_pairs;
       link_type t1' t2'
-  | (Tvar _, _) ->
+  | (Tvar (_, layout), _) ->
       occur !env t1' t2;
       occur_univar !env t2;
+      constrain_type_layout env t2' layout;
       link_type t1' t2;
-  | (_, Tvar _) ->
+  | (_, Tvar (_, layout)) ->
       occur !env t2' t1;
       occur_univar !env t1;
+      constrain_type_layout env t1' layout;
       link_type t2' t1;
   | (Tfield _, Tfield _) -> (* special case for GADTs *)
       unify_fields env t1' t2'
@@ -2931,16 +3041,16 @@ and unify_list env tl1 tl2 =
 and make_rowvar level use1 rest1 use2 rest2  =
   let set_name ty name =
     match ty.desc with
-      Tvar None -> set_type_desc ty (Tvar name)
+      Tvar (None,layout) -> set_type_desc ty (Tvar (name,layout))
     | _ -> ()
   in
   let name =
     match rest1.desc, rest2.desc with
-      Tvar (Some _ as name1), Tvar (Some _ as name2) ->
+      Tvar (Some _ as name1, _), Tvar (Some _ as name2, _) ->
         if rest1.level <= rest2.level then name1 else name2
-    | Tvar (Some _ as name), _ ->
+    | Tvar (Some _ as name, _), _ ->
         if use2 then set_name rest2 name; name
-    | _, Tvar (Some _ as name) ->
+    | _, Tvar (Some _ as name, _) ->
         if use1 then set_name rest2 name; name
     | _ -> None
   in
@@ -5089,77 +5199,6 @@ let same_constr env t1 t2 =
 let () =
   Env.same_constr := same_constr
 
-(* We use expand_head_opt version of expand_head to get access
-   to the manifest type of private abbreviations. *)
-let rec get_unboxed_type_representation env ty fuel =
-  if fuel < 0 then ty else
-  let ty = repr (expand_head_opt env ty) in
-  match ty.desc with
-  | Tconstr (p, args, _) ->
-    begin match Env.find_type p env with
-    | exception Not_found -> ty
-    | {type_params; type_kind =
-         Type_record ([{ld_type = ty2; _}], Record_unboxed _)
-       | Type_variant ([{cd_args = Cstr_tuple [ty2]; _}], Variant_unboxed)
-       | Type_variant ([{cd_args = Cstr_record [{ld_type = ty2; _}]; _}],
-                       Variant_unboxed)}
-      ->
-        let ty2 = match ty2.desc with Tpoly (t, _) -> t | _ -> ty2 in
-        get_unboxed_type_representation env
-          (apply env type_params ty2 args) (fuel - 1)
-    | _ -> ty
-    end
-  | _ -> ty
-
-let get_unboxed_type_representation env ty =
-  (* Do not give too much fuel: PR#7424 *)
-  get_unboxed_type_representation env ty 100
-
-
-let get_type_layout_head env ty =
-  match (repr ty).desc with
-  | Tconstr(p, _args, _abbrev) ->
-     begin match Env.find_type p env with
-     | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
-     | exception Not_found -> Any
-     end
-  | Tvariant row ->
-      let row = Btype.row_repr row in
-      (* if all labels are devoid of arguments, not a pointer *)
-      if
-        not row.row_closed
-        || List.exists
-          (function
-            | _, (Rpresent (Some _) | Reither (false, _, _, _)) -> true
-            | _ -> false)
-          row.row_fields
-      then Any
-      else Immediate
-  | _ -> Any
-
-let check_type_layout env ty layout =
-  match Type_layout.sublayout (get_type_layout_head env ty) layout with
-  | Ok () -> Ok ()
-  | Error _ ->
-    let ty = get_unboxed_type_representation env ty in
-    Type_layout.sublayout (get_type_layout_head env ty) layout
-
-let check_decl_layout env decl layout =
-  match decl with
-  | { type_kind = ( Type_variant ([{cd_args = Cstr_tuple [arg]; _}], Variant_unboxed)
-                  | Type_variant ([{cd_args = Cstr_record [{ld_type=arg; _}]; _}],
-                                  Variant_unboxed)
-                  | Type_record ([{ld_type=arg; _}], Record_unboxed _)); _ } ->
-     check_type_layout env arg layout
-  | { type_kind; type_manifest ; _ } ->
-      match Type_layout.sublayout
-              (Type_layout.layout_bound_of_kind type_kind) layout with
-      | Ok () -> Ok ()
-      | Error _ as err ->
-          match type_manifest with
-          | None -> err
-          | Some ty -> check_type_layout env ty layout
-
 let maybe_pointer_type env typ =
   let layout : Type_layout.t =
     (* In bytecode, we don't know at compile time whether we are
@@ -5170,4 +5209,3 @@ let maybe_pointer_type env typ =
 
 let is_void_type env typ =
   Result.is_error (check_type_layout env typ Type_layout.void)
-

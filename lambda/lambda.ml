@@ -1108,6 +1108,11 @@ let bind_with_layout_rep let_kind (var, layout_rep) exp body =
 let bind str var exp body =
   bind_with_layout_rep str (var, Value Pgenval) exp body
 
+let kind_of_layout_rep let_kind =
+  match let_kind with
+  | Void -> Pintval
+  | Value k -> k
+
 let negate_integer_comparison = function
   | Ceq -> Cne
   | Cne -> Ceq

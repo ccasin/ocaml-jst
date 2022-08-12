@@ -95,7 +95,7 @@ let structure : Env.t -> type_definition -> type_structure = fun env def ->
       end
   | Type_record (labels, repr) ->
       let labels =
-        List.filter (fun {ld_type; _} -> not_void_type env ld_type) labels
+        List.filter (fun {ld_void; _} -> ld_void) labels
       in
       let constructors = One (
         demultiply_list labels @@ fun ld -> {
@@ -124,6 +124,7 @@ let structure : Env.t -> type_definition -> type_structure = fun env def ->
           in
           begin match cd.cd_args with
           | Cstr_tuple tys ->
+              (* CJC XXX: this void info should be in Cstr_tuple.  Or cd_tags, or something *)
               let tys = List.filter (fun ty -> not_void_type env ty) tys in
               demultiply_list tys @@ fun argument_type -> {
                 location = cd.cd_loc;
@@ -134,7 +135,7 @@ let structure : Env.t -> type_definition -> type_structure = fun env def ->
               }
           | Cstr_record labels ->
               let labels =
-                List.filter (fun {ld_type; _} -> not_void_type env ld_type) labels
+                List.filter (fun {ld_void; _} -> ld_void) labels
               in
               demultiply_list labels @@ fun ld ->
                 let argument_type = ld.ld_type in
@@ -268,7 +269,7 @@ let free_variables ty =
   Ctype.free_variables (Ctype.repr ty)
   |> List.map (fun {desc; id; _} ->
       match desc with
-      | Tvar text -> {text; id}
+      | Tvar (text,_) -> {text; id}
       | _ ->
           (* Ctype.free_variables only returns Tvar nodes *)
           assert false)
@@ -483,7 +484,7 @@ let check_type
     (* "Indifferent" case, the empty context is sufficient. *)
     | (_                  , Ind    ) -> empty
     (* Variable case, add constraint. *)
-    | (Tvar(alpha)        , m      ) ->
+    | (Tvar(alpha, _)     , m      ) ->
         TVarMap.singleton {text = alpha; id = ty.Types.id} m
     (* "Separable" case for constructors with known memory representation. *)
     | (Tarrow _           , Sep    )
@@ -555,7 +556,8 @@ let worst_msig decl = List.map (fun _ -> Deepsep) decl.type_params
     Note: this differs from {!Types.Separability.default_signature},
     which does not have access to the declaration and its immediacy. *)
 let msig_of_external_type env decl =
-  if Result.is_ok (Ctype.check_decl_layout env decl Immediate64)
+  if Result.is_error (Ctype.check_decl_layout env decl Type_layout.value)
+     || Result.is_ok (Ctype.check_decl_layout env decl Type_layout.immediate64)
   then best_msig decl
   else worst_msig decl
 
@@ -621,7 +623,7 @@ let msig_of_context : decl_loc:Location.t -> parameters:type_expr list
         | Ind -> true
         | Sep | Deepsep -> false in
       match param_instance.desc with
-      | Tvar text ->
+      | Tvar (text, _) ->
           let var = {text; id = param_instance.Types.id} in
           (get context var) :: acc, (set_ind context var)
       | _ ->

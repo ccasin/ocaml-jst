@@ -421,11 +421,7 @@ and transl_exp0 ~in_new_scope ~scopes e =
   | Texp_try(body, pat_expr_list) ->
       let id = Typecore.name_cases "exn" pat_expr_list in
       let l = Typeopt.value_kind e.exp_env e.exp_type in
-      let k =
-        match l with
-        | Value k -> k
-        | Void -> Pintval
-      in
+      let k = kind_of_layout_rep l in
       Ltrywith(transl_exp ~scopes body, id,
                Matching.for_trywith ~scopes l e.exp_loc (Lvar id)
                  (transl_cases_try ~scopes pat_expr_list), k)
@@ -490,7 +486,7 @@ and transl_exp0 ~in_new_scope ~scopes e =
         fields representation extended_expression
   | Texp_field(arg, _, lbl) ->
       let targ = transl_exp ~scopes arg in
-      if Typeopt.is_void e then
+      if lbl.lbl_pos = lbl_pos_void then
         Lsequence (targ, Lconst const_unit)
       else begin
         let sem =
@@ -529,6 +525,7 @@ and transl_exp0 ~in_new_scope ~scopes e =
           | Record_float -> Psetfloatfield (lbl.lbl_pos, mode)
           | Record_extension _ ->
             Psetfield (lbl.lbl_pos + 1, maybe_pointer newval, mode)
+          | Record_immediate _ -> assert false
         in
         Lprim(access, [transl_exp ~scopes arg; transl_exp ~scopes newval],
               of_location ~scopes e.exp_loc)
@@ -590,10 +587,11 @@ and transl_exp0 ~in_new_scope ~scopes e =
               of_location ~scopes e.exp_loc)
       end
   | Texp_ifthenelse(cond, ifso, Some ifnot) ->
+      let k = kind_of_layout_rep (Typeopt.value_kind e.exp_env e.exp_type) in
       Lifthenelse(transl_exp ~scopes cond,
                   event_before ~scopes ifso (transl_exp ~scopes ifso),
                   event_before ~scopes ifnot (transl_exp ~scopes ifnot),
-                  Typeopt.value_kind e.exp_env e.exp_type)
+                  k)
   | Texp_ifthenelse(cond, ifso, None) ->
       Lifthenelse(transl_exp ~scopes cond,
                   event_before ~scopes ifso (transl_exp ~scopes ifso),
@@ -893,13 +891,25 @@ and transl_list ~scopes expr_list =
 
 and transl_list_with_shape ~scopes expr_list =
   let transl_with_shape e =
-    let shape = Typeopt.value_kind e.exp_env e.exp_type in
+    let shape = kind_of_layout_rep (Typeopt.value_kind e.exp_env e.exp_type) in
     transl_exp ~scopes e, shape
   in
   List.split (List.map transl_with_shape expr_list)
 
+(*  CJC XXX do we want to do this instead?
+and transl_list_with_shape ~scopes expr_list =
+  let transl_with_shape e =
+    let l = transl_exp ~scopes e in
+    match Typeopt.value_kind e.exp_env e.exp_type with
+    | Void -> Either.Right l
+    | Value shape -> Either.Left (l, shape)
+  in
+  let (voids,values) = List.partition_map transl_with_shape expr_list in
+  voids, List.split values
+*)
+
 and transl_guard ~scopes guard rhs =
-  let kind = Typeopt.value_kind rhs.exp_env rhs.exp_type in
+  let kind = kind_of_layout_rep (Typeopt.value_kind rhs.exp_env rhs.exp_type) in
   let expr = event_before ~scopes rhs (transl_exp ~scopes rhs) in
   match guard with
   | None -> expr

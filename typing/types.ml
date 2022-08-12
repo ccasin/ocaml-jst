@@ -26,7 +26,7 @@ type type_expr =
     id: int }
 
 and type_desc =
-    Tvar of string option
+    Tvar of string option * layout ref
   (*    Tvar of { name : string option; mutable layout : Type_layout.t } *)
   | Tarrow of arrow_desc * type_expr * type_expr * commutable
   | Ttuple of type_expr list
@@ -37,7 +37,7 @@ and type_desc =
   | Tlink of type_expr
   | Tsubst of type_expr         (* for copying *)
   | Tvariant of row_desc
-  | Tunivar of string option
+  | Tunivar of string option * layout
   (*  | Tunivar of { name : string option; layout : Type_layout.t } *)
   | Tpoly of type_expr * type_expr list
   | Tpackage of Path.t * Longident.t list * type_expr list

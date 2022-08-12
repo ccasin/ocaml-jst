@@ -995,14 +995,6 @@ let transl_type_decl env rec_flag sdecl_list =
     sdecl_list tdecls;
   (* Check that constraints are enforced *)
   List.iter2 (check_constraints new_env) sdecl_list decls;
-  List.iter (fun tdecl ->
-    (* let kind_layout = Ctype.kind_layout env tdecl.typ_type.type_kind in *)
-    let layout = Type_layout.of_layout_annotation tdecl.typ_layout_annotation in
-    begin
-      match Ctype.check_decl_layout env tdecl.typ_type layout with
-      | Ok () -> ()
-      | Error v -> raise(Error(tdecl.typ_loc, Layout v))
-    end) tdecls;
   (* Add type properties to declarations *)
   (* CR ccasinghino: maybe improve immediacy values *)
   let decls =
@@ -1034,7 +1026,7 @@ let transl_type_decl env rec_flag sdecl_list =
     let layout = Type_layout.of_layout_annotation tdecl.typ_layout_annotation in
     match Ctype.check_decl_layout env tdecl.typ_type layout with
     | Ok () -> ()
-    | Error _ -> failwith "CJC XXX")
+    | Error v -> raise(Error(tdecl.typ_loc, Layout v)))
     tdecls;
   (* Done *)
   (final_decls, final_env)
@@ -1077,8 +1069,8 @@ let transl_extension_constructor ~scope env type_path type_params
             Ctype.free_variables (Btype.newgenty (Ttuple args))
           in
             List.iter
-              (function {desc = Tvar (Some "_")} as ty ->
-                          if List.memq ty vars then ty.desc <- Tvar None
+              (function {desc = Tvar (Some "_",l)} as ty ->
+                          if List.memq ty vars then ty.desc <- Tvar (None,l)
                         | _ -> ())
               typext_params
         end;

@@ -930,7 +930,7 @@ let rec comp_expr env exp sz cont =
       done;
       comp_expr env arg sz (Kswitch(lbl_consts, lbl_blocks) :: !c)
   | Lstringswitch (arg,sw,d,loc, kind) ->
-      comp_expr env (Matching.expand_stringswitch loc kind arg sw d) sz cont
+      comp_expr env (Matching.expand_stringswitch loc (Value kind) arg sw d) sz cont
   | Lassign(id, expr) ->
       begin try
         let pos = Ident.find_same id env.ce_stack in

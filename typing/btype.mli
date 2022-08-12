@@ -242,7 +242,8 @@ val set_univar: type_expr option ref -> type_expr -> unit
 val set_kind: field_kind option ref -> field_kind -> unit
 val set_commu: commutable ref -> commutable -> unit
 val set_typeset: TypeSet.t ref -> TypeSet.t -> unit
-        (* Set references, logging the old value *)
+val set_layout: layout ref -> layout -> unit
+     (* Set references, logging the old value *)
 
 (**** Forward declarations ****)
 val print_raw: (Format.formatter -> type_expr -> unit) ref

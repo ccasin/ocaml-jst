@@ -98,22 +98,48 @@ let layout_bound_of_kind = function
   | Type_abstract { layout } -> layout
   | Type_variant (_, rep) -> layout_bound_of_variant_representation rep
 
+let rec sort_repr s =
+  match s with
+  | (Value | Void) -> s
+  | Var r -> begin
+      match !r with
+      | Some s -> sort_repr s
+      | None -> s
+    end
+
+let equal_sort s1 s2 =
+  match sort_repr s1, sort_repr s2 with
+  | Value, Value -> true
+  | Void, Void -> true
+  | (Var r, s) | (s, Var r) -> (r := Some s; true)
+  | (Value | Void), _ -> false
+
 let equal l1 l2 =
   match l1, l2 with
   | Any, Any
   | Immediate64, Immediate64
-  | Immediate, Immediate
-  | Sort Value, Sort Value
-  | Sort Void, Sort Void -> true
-  | Sort (Var _), _ | _, Sort (Var _) -> failwith "TODO" (* CJC XXX *)
-  | _, _ -> false
+  | Immediate, Immediate -> true
+  | Sort s1, Sort s2 -> equal_sort s1 s2
+  | (Any | Immediate64 | Immediate | Sort _), _ -> false
+
+let intersection l1 l2 =
+  match l1, l2 with
+  | (Any, l | l, Any) -> Ok l
+  | ((Immediate64 | Immediate) as l, Sort s
+    | Sort s, ((Immediate64 | Immediate) as l)) ->
+    if equal_sort Value s then Ok l else Error (failwith "CJC XXX error message")
+  | (Immediate, Immediate64 | Immediate64, Immediate)-> Ok Immediate64
+  | _, _ ->
+    if equal l1 l2 then Ok l2 else Error (failwith "CJC XXX error message")
 
 let sublayout sub super =
   match sub, super with
-  | _, Any
-  | (Immediate64 | Immediate), Sort Value
+  | _, Any -> Ok ()
+  | (Immediate64 | Immediate), Sort s ->
+      if equal_sort Value s then Ok ()
+      else Error (Violation.Not_a_sublayout (sub,super))
   | Immediate, Immediate64 -> Ok ()
-  | Sort (Var _), _ -> Ok () (* CJC XXX effect *)
-  | l1, l2 when equal l1 l2 -> Ok ()
-  | _ -> Error (Violation.Not_a_sublayout (sub,super))
+  | _, _ ->
+      if equal sub super then Ok ()
+      else Error (Violation.Not_a_sublayout (sub,super))
 

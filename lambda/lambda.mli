@@ -508,6 +508,8 @@ val bind : let_kind -> Ident.t -> lambda -> lambda -> lambda
 val bind_with_layout_rep:
   let_kind -> (Ident.t * layout_rep) -> lambda -> lambda -> lambda
 
+val kind_of_layout_rep : layout_rep -> value_kind
+
 val negate_integer_comparison : integer_comparison -> integer_comparison
 val swap_integer_comparison : integer_comparison -> integer_comparison
 

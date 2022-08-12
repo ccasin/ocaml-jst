@@ -495,7 +495,8 @@ let rec raw_type ppf ty =
   end
 and raw_type_list tl = raw_list raw_type tl
 and raw_type_desc ppf = function
-    Tvar name -> fprintf ppf "Tvar %a" print_name name
+    (* XXX CJC TODO print layout in var case *)
+    Tvar (name,_) -> fprintf ppf "Tvar %a" print_name name
   | Tarrow((l,arg,ret),t1,t2,c) ->
       fprintf ppf "@[<hov1>Tarrow((\"%s\",%a,%a),@,%a,@,%a,@,%s)@]"
         (string_of_label l) Alloc_mode.print arg Alloc_mode.print ret
@@ -520,7 +521,8 @@ and raw_type_desc ppf = function
   | Tnil -> fprintf ppf "Tnil"
   | Tlink t -> fprintf ppf "@[<1>Tlink@,%a@]" raw_type t
   | Tsubst t -> fprintf ppf "@[<1>Tsubst@,%a@]" raw_type t
-  | Tunivar name -> fprintf ppf "Tunivar %a" print_name name
+  (* CJC XXX print layout in univar case *)
+  | Tunivar (name,_) -> fprintf ppf "Tunivar %a" print_name name
   | Tpoly (t, tl) ->
       fprintf ppf "@[<hov1>Tpoly(@,%a,@,%a)@]"
         raw_type t
@@ -774,7 +776,7 @@ let named_weak_vars = ref String.Set.empty
 let reset_names () = names := []; name_counter := 0; named_vars := []
 let add_named_var ty =
   match ty.desc with
-    Tvar (Some name) | Tunivar (Some name) ->
+    Tvar (Some name, _) | Tunivar (Some name, _) ->
       if List.mem name !named_vars then () else
       named_vars := name :: !named_vars
   | _ -> ()
@@ -810,7 +812,7 @@ let name_of_type name_generator t =
     try TypeMap.find t !weak_var_map with Not_found ->
     let name =
       match t.desc with
-        Tvar (Some name) | Tunivar (Some name) ->
+        Tvar (Some name, _) | Tunivar (Some name, _) ->
           (* Some part of the type we've already printed has assigned another
            * unification variable to that name. We want to keep the name, so try
            * adding a number until we find a name that's not taken. *)

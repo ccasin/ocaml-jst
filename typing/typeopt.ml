@@ -364,8 +364,12 @@ let value_kind env ty =
 
 let function_return_value_kind env ty =
   match is_function_type env ty with
-  | Some (_lhs, rhs) -> value_kind env rhs
-  | None -> Value Pgenval
+  | Some (_lhs, rhs) -> begin
+      match value_kind env rhs with
+      | Value k -> k
+      | Void -> assert false
+    end
+  | None -> Pgenval
 
 let value_kind_of_layout = function
   | Value kind -> kind

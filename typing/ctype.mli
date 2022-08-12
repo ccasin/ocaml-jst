@@ -411,8 +411,9 @@ val mcomp : Env.t -> type_expr -> type_expr -> unit
 
 val get_unboxed_type_representation : Env.t -> type_expr -> type_expr
 
-(* val kind_layout : type_kind -> Type_layout.t *)
 val check_decl_layout : Env.t -> type_declaration -> Type_layout.t
   -> (unit, Type_layout.Violation.t) result
 val check_type_layout : Env.t -> type_expr -> Type_layout.t
+  -> (unit, Type_layout.Violation.t) result
+val constrain_type_layout : Env.t -> type_expr -> Type_layout.t
   -> (unit, Type_layout.Violation.t) result

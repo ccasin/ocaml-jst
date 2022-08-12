@@ -47,7 +47,7 @@ let new_id = s_ref (-1)
 let newty2 level desc  =
   incr new_id; { desc; level; scope = lowest_level; id = !new_id }
 let newgenty desc      = newty2 generic_level desc
-let newgenvar ?name () = newgenty (Tvar name)
+let newgenvar ?name layout = newgenty (Tvar (name,ref layout))
 (*
 let newmarkedvar level =
   incr new_id; { desc = Tvar; level = pivot_level - level; id = !new_id }
@@ -81,6 +81,7 @@ type change =
   | Cmode_upper of alloc_mode_var * alloc_mode_const
   | Cmode_lower of alloc_mode_var * alloc_mode_const
   | Cmode_vlower of alloc_mode_var * alloc_mode_var list
+  | Clayout of layout ref * layout
 
 type changes =
     Change of change * changes ref
@@ -737,6 +738,7 @@ let undo_change = function
   | Cmode_upper (v, u) -> v.upper <- u
   | Cmode_lower (v, l) -> v.lower <- l
   | Cmode_vlower (v, vs) -> v.vlower <- vs
+  | Clayout (r, v) -> r := v
 
 type snapshot = changes ref * int
 let last_snapshot = s_ref 0
@@ -788,6 +790,9 @@ let set_commu rc c =
   log_change (Ccommu (rc, !rc)); rc := c
 let set_typeset rs s =
   log_change (Ctypeset (rs, !rs)); rs := s
+let set_layout rl l =
+  log_change (Clayout (rl, !rl)); rl := l
+
 
 let snapshot () =
   let old = !last_snapshot in
