@@ -51,6 +51,10 @@ val sublayout : t -> t -> (unit, Violation.t) result
 (** Translate a user layout annotation to a layout *)
 val of_layout_annotation : Builtin_attributes.layout_annotation option -> t
 
+(** Find a layout in attributes, defaulting to ~default *)
+(*val layout_of_attributes : default:t -> Parsetree.attributes -> t *)
+
+
 (* (** The least layout that represents the kind *)
  * val of_kind : Types.type_kind -> t *)
 

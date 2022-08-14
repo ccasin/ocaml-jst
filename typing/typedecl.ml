@@ -103,7 +103,8 @@ let enter_type rec_flag env sdecl (id, uid) =
   if not needed then env else
   let decl =
     { type_params =
-        List.map (fun _ -> Btype.newgenvar ()) sdecl.ptype_params;
+        (* CJC XXX todo: need to add way to annotate layouts on type parameters *)
+        List.map (fun _ -> Btype.newgenvar Type_layout.value) sdecl.ptype_params;
       type_arity = arity;
       type_kind = Types.kind_abstract;
       type_private = sdecl.ptype_private;

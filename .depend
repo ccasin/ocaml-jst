@@ -490,6 +490,7 @@ typing/btype.cmx : \
     typing/btype.cmi
 typing/btype.cmi : \
     typing/types.cmi \
+    typing/type_layout.cmi \
     typing/path.cmi \
     parsing/asttypes.cmi
 typing/cmt2annot.cmo : \
@@ -942,6 +943,7 @@ typing/persistent_env.cmi : \
     file_formats/cmi_format.cmi
 typing/predef.cmo : \
     typing/types.cmi \
+    typing/type_layout.cmi \
     typing/path.cmi \
     parsing/parsetree.cmi \
     parsing/location.cmi \
@@ -952,6 +954,7 @@ typing/predef.cmo : \
     typing/predef.cmi
 typing/predef.cmx : \
     typing/types.cmx \
+    typing/type_layout.cmx \
     typing/path.cmx \
     parsing/parsetree.cmi \
     parsing/location.cmx \
@@ -1118,6 +1121,7 @@ typing/stypes.cmi : \
     typing/annot.cmi
 typing/subst.cmo : \
     typing/types.cmi \
+    typing/type_layout.cmi \
     typing/path.cmi \
     parsing/parsetree.cmi \
     utils/misc.cmi \
@@ -1130,6 +1134,7 @@ typing/subst.cmo : \
     typing/subst.cmi
 typing/subst.cmx : \
     typing/types.cmx \
+    typing/type_layout.cmx \
     typing/path.cmx \
     parsing/parsetree.cmi \
     utils/misc.cmx \
@@ -1424,6 +1429,7 @@ typing/typedecl_properties.cmi : \
 typing/typedecl_separability.cmo : \
     typing/types.cmi \
     typing/typedecl_properties.cmi \
+    typing/type_layout.cmi \
     parsing/location.cmi \
     typing/env.cmi \
     typing/ctype.cmi \
@@ -1434,6 +1440,7 @@ typing/typedecl_separability.cmo : \
 typing/typedecl_separability.cmx : \
     typing/types.cmx \
     typing/typedecl_properties.cmx \
+    typing/type_layout.cmx \
     parsing/location.cmx \
     typing/env.cmx \
     typing/ctype.cmx \
@@ -1600,6 +1607,7 @@ typing/typemod.cmi : \
 typing/typeopt.cmo : \
     typing/types.cmi \
     typing/typedtree.cmi \
+    typing/type_layout.cmi \
     typing/predef.cmi \
     typing/path.cmi \
     utils/numbers.cmi \
@@ -1614,6 +1622,7 @@ typing/typeopt.cmo : \
 typing/typeopt.cmx : \
     typing/types.cmx \
     typing/typedtree.cmx \
+    typing/type_layout.cmx \
     typing/predef.cmx \
     typing/path.cmx \
     utils/numbers.cmx \

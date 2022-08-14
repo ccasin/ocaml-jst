@@ -32,7 +32,7 @@ val newty2: int -> type_desc -> type_expr
         (* Create a type *)
 val newgenty: type_desc -> type_expr
         (* Create a generic type *)
-val newgenvar: ?name:string -> unit -> type_expr
+val newgenvar: ?name:string -> Type_layout.t -> type_expr
         (* Return a fresh generic variable *)
 
 (* Use Tsubst instead

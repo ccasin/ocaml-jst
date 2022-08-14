@@ -404,8 +404,10 @@ and transl_type_aux env policy mode styp =
           let t = instance t in
           let px = Btype.proxy t in
           begin match px.desc with
-          | Tvar None -> Btype.set_type_desc px (Tvar (Some alias))
-          | Tunivar None -> Btype.set_type_desc px (Tunivar (Some alias))
+          | Tvar (None, layout) ->
+             Btype.set_type_desc px (Tvar (Some alias, layout))
+          | Tunivar (None, layout) ->
+             Btype.set_type_desc px (Tunivar (Some alias, layout))
           | _ -> ()
           end;
           { ty with ctyp_type = t }
@@ -517,6 +519,8 @@ and transl_type_aux env policy mode styp =
       let ty = newty (Tvariant row) in
       ctyp (Ttyp_variant (tfields, closed, present)) ty
   | Ptyp_poly(vars, st) ->
+     (* CJC XXX probably some work to do here when we add layout annotations on
+        type parameters *)
       let vars = List.map (fun v -> v.txt) vars in
       begin_def();
       let new_univars = List.map (fun name -> name, newvar ~name ()) vars in
@@ -533,8 +537,8 @@ and transl_type_aux env policy mode styp =
             let v = Btype.proxy ty1 in
             if deep_occur v ty then begin
               match v.desc with
-                Tvar name when v.level = Btype.generic_level ->
-                  v.desc <- Tunivar name;
+                Tvar (name, layout) when v.level = Btype.generic_level ->
+                  v.desc <- Tunivar (name, !layout);
                   v :: tyl
               | _ ->
                 raise (Error (styp.ptyp_loc, env, Cannot_quantify (name, v)))
@@ -711,8 +715,8 @@ let transl_simple_type_univars env styp =
       (fun acc v ->
         let v = repr v in
         match v.desc with
-          Tvar name when v.level = Btype.generic_level ->
-            v.desc <- Tunivar name; v :: acc
+          Tvar (name, layout) when v.level = Btype.generic_level ->
+            v.desc <- Tunivar (name, layout); v :: acc
         | _ -> acc)
       [] !pre_univars
   in

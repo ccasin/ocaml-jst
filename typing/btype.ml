@@ -500,7 +500,9 @@ let rec norm_univar ty =
   | _                  -> assert false
 
 let rec copy_type_desc ?(keep_names=false) f = function
-    Tvar _ as ty        -> if keep_names then ty else Tvar None
+    Tvar (name, layout) ->
+     let name = if keep_names then name else None in
+     Tvar (name, ref !layout)
   | Tarrow (p, ty1, ty2, c)-> Tarrow (p, f ty1, f ty2, copy_commu c)
   | Ttuple l            -> Ttuple (List.map f l)
   | Tconstr (p, l, _)   -> Tconstr (p, List.map f l, ref Mnil)
@@ -752,12 +754,13 @@ let link_type ty ty' =
   (* Name is a user-supplied name for this unification variable (obtained
    * through a type annotation for instance). *)
   match desc, ty'.desc with
-    Tvar name, Tvar name' ->
+    Tvar (name, layout), Tvar (name', layout') ->
       begin match name, name' with
-      | Some _, None ->  log_type ty'; ty'.desc <- Tvar name
+      | Some _, None ->  log_type ty'; ty'.desc <- Tvar (name,layout')
       | None, Some _ ->  ()
       | Some _, Some _ ->
-          if ty.level < ty'.level then (log_type ty'; ty'.desc <- Tvar name)
+          if ty.level < ty'.level then
+            (log_type ty'; ty'.desc <- Tvar (name,layout'))
       | None, None   ->  ()
       end
   | _ -> ()
