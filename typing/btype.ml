@@ -754,7 +754,8 @@ let link_type ty ty' =
   (* Name is a user-supplied name for this unification variable (obtained
    * through a type annotation for instance). *)
   match desc, ty'.desc with
-    Tvar (name, layout), Tvar (name', layout') ->
+    (* CJC XXX : do we want to check sublayout here or something? *)
+    Tvar (name, _), Tvar (name', layout') ->
       begin match name, name' with
       | Some _, None ->  log_type ty'; ty'.desc <- Tvar (name,layout')
       | None, Some _ ->  ()

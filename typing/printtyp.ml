@@ -1197,8 +1197,8 @@ let rec tree_of_type_decl id decl =
   | Some ty ->
       let vars = free_variables ty in
       List.iter
-        (function {desc = Tvar (Some "_")} as ty ->
-            if List.memq ty vars then ty.desc <- Tvar None
+        (function {desc = Tvar (Some "_",l)} as ty ->
+             if List.memq ty vars then ty.desc <- Tvar (None,l)
           | _ -> ())
         params
   | None -> ()
@@ -1981,7 +1981,7 @@ let hide_variant_name t =
   | {desc = Tvariant row} as t when (row_repr row).row_name <> None ->
       newty2 t.level
         (Tvariant {(row_repr row) with row_name = None;
-                   row_more = newvar2 (row_more row).level})
+                   row_more = newvar2 (row_more row).level Type_layout.value})
   | _ -> t
 
 let prepare_expansion (t, t') =

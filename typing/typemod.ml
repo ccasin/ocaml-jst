@@ -2719,7 +2719,7 @@ let type_package env m p nl =
   in
   List.iter2
     (fun n ty ->
-      try Ctype.unify env ty (Ctype.newvar ())
+      try Ctype.unify env ty (Ctype.newvar Type_layout.value)
       with Ctype.Unify _ ->
         raise (Error(modl.mod_loc, env, Scoping_pack (n,ty))))
     nl' tl';

@@ -124,10 +124,10 @@ val set_levels: levels -> unit
 val create_scope : unit -> int
 
 val newty: type_desc -> type_expr
-val newvar: ?name:string -> unit -> type_expr
-val newvar2: ?name:string -> int -> type_expr
+val newvar: ?name:string -> Type_layout.t -> type_expr
+val newvar2: ?name:string -> int -> Type_layout.t -> type_expr
         (* Return a fresh variable *)
-val new_global_var: ?name:string -> unit -> type_expr
+val new_global_var: ?name:string -> Type_layout.t -> type_expr
         (* Return a fresh variable, bound at toplevel
            (as type variables ['a] in type constraints). *)
 val newobj: type_expr -> type_expr

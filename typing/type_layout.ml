@@ -77,10 +77,12 @@ let to_string = function
  *   | Type_open -> Sort Value *)
 
 let any = Any
+let any_sort () = Sort (Var (ref None))
 let value = Sort Value
 let immediate = Immediate
 let immediate64 = Immediate64
 let void = Sort Void
+
 
 let layout_bound_of_record_representation = function
   | Record_regular -> value

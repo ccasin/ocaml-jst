@@ -421,7 +421,7 @@ and global_flag =
 and variant_representation =
     Variant_regular          (* Constant or boxed constructors *)
   | Variant_unboxed          (* One unboxed single-field constructor *)
-  | Variant_immediate
+  | Variant_immediate        (* Variants with all constant constructors *)
 
 and label_declaration =
   {

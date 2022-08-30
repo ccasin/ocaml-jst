@@ -322,6 +322,10 @@ let can_apply_primitive p pmode pos args =
     end
   end
 
+(* For a first pass, function arguments are not permitted types of kind void *)
+let fun_arg_value_kind pat =
+  nonvoid_kind_of_layout_rep (value_kind pat.pat_env pat.pat_type)
+
 let rec transl_exp ~scopes e =
   transl_exp1 ~scopes ~in_new_scope:false e
 
@@ -1074,7 +1078,7 @@ and transl_curried_function
           loc return repr partial param cases
       else if Parmatch.inactive ~partial pat
       then
-        let kind = value_kind pat.pat_env pat.pat_type in
+        let kind = fun_arg_value_kind pat in
         let return_kind = function_return_value_kind exp_env exp_type in
         let ((fnkind, params, return, region), body) =
           loop ~scopes exp_loc return_kind
@@ -1116,7 +1120,7 @@ and transl_curried_function
 
 and transl_tupled_function
       ~scopes ~arity ~mode ~region loc return
-      repr partial (param:Ident.t) cases =
+      repr partial (param:Ident.t) cases : (_ * (Ident.t * value_kind) list * _ * _) * _ =
   match cases with
   | {c_lhs={pat_desc = Tpat_tuple pl; pat_mode }} :: _
     when !Clflags.native_code
@@ -1131,20 +1135,17 @@ and transl_tupled_function
             (fun {c_lhs; c_guard; c_rhs} ->
               (Matching.flatten_pattern size c_lhs, c_guard, c_rhs))
             cases in
-        let kinds =
+        let kinds : value_kind list =
           (* All the patterns might not share the same types. We must take the
              union of the patterns types *)
           match pats_expr_list with
           | [] -> assert false
           | (pats, _, _) :: cases ->
-              let first_case_kinds =
-                List.map (fun pat -> value_kind pat.pat_env pat.pat_type) pats
-              in
+              let first_case_kinds = List.map fun_arg_value_kind pats in
               List.fold_left
                 (fun kinds (pats, _, _) ->
                    List.map2 (fun kind pat ->
-                       value_kind_union kind
-                         (value_kind pat.pat_env pat.pat_type))
+                       value_kind_union kind (fun_arg_value_kind pat))
                      kinds pats)
                 first_case_kinds cases
         in
@@ -1180,9 +1181,8 @@ and transl_function0
         arg_mode,
         List.fold_left (fun k {c_lhs=pat} ->
           assert (transl_pat_mode pat = arg_mode);
-          Typeopt.value_kind_union k
-            (value_kind pat.pat_env pat.pat_type))
-          (value_kind pat.pat_env pat.pat_type) other_cases
+          Typeopt.value_kind_union k (fun_arg_value_kind pat))
+          (fun_arg_value_kind pat) other_cases
     in
     let body =
       Matching.for_function ~scopes return loc repr (Lvar param)
@@ -1295,7 +1295,10 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
         (fun i (lbl, definition) ->
            match definition with
            | Kept typ ->
-               let field_kind = value_kind env typ in
+               (* CJC XXX - needs to be a fold that pulls out void stuff,
+                  evaluates it and throws it away before constructing the record.
+                  Should I be worried about changing eval order here? *)
+               let field_kind = nonvoid_kind_of_layout_rep (value_kind env typ) in
                let sem =
                  match lbl.lbl_mut with
                  | Immutable -> Reads_agree
@@ -1309,12 +1312,18 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
                  | Record_float ->
                     (* This allocation is always deleted,
                        so it's simpler to leave it Alloc_heap *)
-                    Pfloatfield (i, sem, alloc_heap) in
+                   Pfloatfield (i, sem, alloc_heap)
+                 | Record_immediate _ -> assert false (* CJC XXX *)
+               in
                Lprim(access, [Lvar init_id],
                      of_location ~scopes loc),
                field_kind
            | Overridden (_lid, expr) ->
-               let field_kind = value_kind expr.exp_env expr.exp_type in
+               (* CJC XXX see above comment *)
+               let field_kind =
+                 nonvoid_kind_of_layout_rep
+                   (value_kind expr.exp_env expr.exp_type)
+               in
                transl_exp ~scopes expr, field_kind)
         fields
     in
@@ -1335,6 +1344,7 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
             Lconst(Const_float_block(List.map extract_float cl))
         | Record_extension _ ->
             raise Not_constant
+        | Record_immediate _ -> assert false (* CJC XXX *)
       with Not_constant ->
         let loc = of_location ~scopes loc in
         match repres with
@@ -1349,6 +1359,7 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
             let slot = transl_extension_path loc env path in
             Lprim(Pmakeblock(0, mut, Some (Pgenval :: shape), mode),
                   slot :: ll, loc)
+        | Record_immediate _ -> assert false (* CJC XXX *)
     in
     begin match opt_init_expr with
       None -> lam
@@ -1376,6 +1387,7 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
                 let pos = lbl.lbl_pos + 1 in
                 let ptr = maybe_pointer expr in
                 Psetfield(pos, ptr, Assignment alloc_heap)
+            | Record_immediate _ -> assert false (* CJC XXX *)
           in
           Lsequence(Lprim(upd, [Lvar copy_id; transl_exp ~scopes expr],
                           of_location ~scopes loc),
@@ -1393,7 +1405,9 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
   end
 
 and transl_match ~scopes e arg pat_expr_list partial =
-  let kind = Typeopt.value_kind e.exp_env e.exp_type in
+  let layout_rep = Typeopt.value_kind e.exp_env e.exp_type in
+  (* CJC XXX surely we want to match on void stuff *)
+  let kind = nonvoid_kind_of_layout_rep layout_rep in
   let rewrite_case (val_cases, exn_cases, static_handlers as acc)
         ({ c_lhs; c_guard; c_rhs } as case) =
     if c_rhs.exp_desc = Texp_unreachable then acc else
@@ -1419,7 +1433,8 @@ and transl_match ~scopes e arg pat_expr_list partial =
         let ids_full = Typedtree.pat_bound_idents_full pv in
         let ids = List.map (fun (id, _, _) -> id) ids_full in
         let ids_kinds =
-          List.map (fun (id, _, ty) -> id, Typeopt.value_kind pv.pat_env ty)
+          List.map (fun (id, _, ty) ->
+            id, nonvoid_kind_of_layout_rep (Typeopt.value_kind pv.pat_env ty))
             ids_full
         in
         let vids = List.map Ident.rename ids in
@@ -1446,32 +1461,33 @@ and transl_match ~scopes e arg pat_expr_list partial =
     let static_exception_id = next_raise_count () in
     Lstaticcatch
       (Ltrywith (Lstaticraise (static_exception_id, body), id,
-                 Matching.for_trywith ~scopes kind e.exp_loc (Lvar id) exn_cases,
+                 Matching.for_trywith ~scopes layout_rep e.exp_loc (Lvar id) exn_cases,
                  kind),
        (static_exception_id, val_ids),
        handler,
-      kind)
+       kind)
   in
   let classic =
     match arg, exn_cases with
     | {exp_desc = Texp_tuple argl}, [] ->
       assert (static_handlers = []);
       let mode = transl_exp_mode arg in
-      Matching.for_multiple_match ~scopes kind e.exp_loc
+      Matching.for_multiple_match ~scopes layout_rep e.exp_loc
         (transl_list ~scopes argl) mode val_cases partial
     | {exp_desc = Texp_tuple argl}, _ :: _ ->
         let val_ids =
           List.map
             (fun arg ->
                Typecore.name_pattern "val" [],
-               Typeopt.value_kind arg.exp_env arg.exp_type
+               nonvoid_kind_of_layout_rep
+                 (Typeopt.value_kind arg.exp_env arg.exp_type)
             )
             argl
         in
         let lvars = List.map (fun (id, _) -> Lvar id) val_ids in
         let mode = transl_exp_mode arg in
         static_catch (transl_list ~scopes argl) val_ids
-          (Matching.for_multiple_match ~scopes kind e.exp_loc
+          (Matching.for_multiple_match ~scopes layout_rep e.exp_loc
              lvars mode val_cases partial)
     | arg, [] ->
       assert (static_handlers = []);
@@ -1479,7 +1495,10 @@ and transl_match ~scopes e arg pat_expr_list partial =
         None (transl_exp ~scopes arg) val_cases partial
     | arg, _ :: _ ->
         let val_id = Typecore.name_pattern "val" (List.map fst val_cases) in
-        let k = Typeopt.value_kind arg.exp_env arg.exp_type in
+        let k =
+          nonvoid_kind_of_layout_rep
+            (Typeopt.value_kind arg.exp_env arg.exp_type)
+        in
         static_catch [transl_exp ~scopes arg] [val_id, k]
           (Matching.for_function ~scopes kind e.exp_loc
              None (Lvar val_id) val_cases partial)
@@ -1521,7 +1540,10 @@ and transl_letop ~scopes loc env let_ ands param case partial warnings =
   in
   let exp = loop (transl_exp ~scopes let_.bop_exp) ands in
   let func =
-    let return_kind = value_kind case.c_rhs.exp_env case.c_rhs.exp_type in
+    let return_kind =
+      nonvoid_kind_of_layout_rep
+        (value_kind case.c_rhs.exp_env case.c_rhs.exp_type)
+    in
     let (kind, params, return, _region), body =
       event_function ~scopes case.c_rhs
         (function repr ->

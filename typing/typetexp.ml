@@ -90,6 +90,12 @@ let create_package_mty fake loc env (p, l) =
 
 (* Translation of type expressions *)
 
+(* type_variables: all current type variable.
+     narrow and widen create scopes for these
+
+
+*)
+
 let type_variables = ref (TyVarMap.empty : type_expr TyVarMap.t)
 let univars        = ref ([] : (string * type_expr) list)
 let pre_univars    = ref ([] : type_expr list)
@@ -114,10 +120,10 @@ let validate_name = function
   | Some name as s ->
       if name <> "" && strict_ident name.[0] then s else None
 
-let new_global_var ?name () =
-  new_global_var ?name:(validate_name name) ()
-let newvar ?name () =
-  newvar ?name:(validate_name name) ()
+let new_global_var ?name layout =
+  new_global_var ?name:(validate_name name) layout
+let newvar ?name layout =
+  newvar ?name:(validate_name name) layout
 
 let type_variable loc name =
   try
@@ -129,10 +135,11 @@ let valid_tyvar_name name =
   name <> "" && name.[0] <> '_'
 
 let transl_type_param env styp =
+  (* CJC XXX needs adjusting when I deal with type params.  Maybe take layout as arg? *)
   let loc = styp.ptyp_loc in
   match styp.ptyp_desc with
     Ptyp_any ->
-      let ty = new_global_var ~name:"_" () in
+      let ty = new_global_var ~name:"_" Type_layout.any in
         { ctyp_desc = Ttyp_any; ctyp_type = ty; ctyp_env = env;
           ctyp_loc = loc; ctyp_attributes = styp.ptyp_attributes; }
   | Ptyp_var name ->
@@ -143,7 +150,7 @@ let transl_type_param env styp =
           ignore (TyVarMap.find name !type_variables);
           raise Already_bound
         with Not_found ->
-          let v = new_global_var ~name () in
+          let v = new_global_var ~name Type_layout.any in
             type_variables := TyVarMap.add name v !type_variables;
             v
       in
@@ -178,8 +185,8 @@ let rec extract_params styp =
       (l, arg_mode, a) :: params, ret, ret_mode
   | _ -> final styp
 
-let new_pre_univar ?name () =
-  let v = newvar ?name () in pre_univars := v :: !pre_univars; v
+let new_pre_univar ?name layout =
+  let v = newvar ?name layout in pre_univars := v :: !pre_univars; v
 
 type policy = Fixed | Extensible | Univars
 
@@ -196,10 +203,11 @@ and transl_type_aux env policy mode styp =
   match styp.ptyp_desc with
     Ptyp_any ->
       let ty =
-        if policy = Univars then new_pre_univar () else
+        (* CJC XXX what is a pre_univar? What is policy? *)
+        if policy = Univars then new_pre_univar Type_layout.any else
           if policy = Fixed then
             raise (Error (styp.ptyp_loc, env, Unbound_type_variable "_"))
-          else newvar ()
+          else newvar Type_layout.any
       in
       ctyp Ttyp_any ty
   | Ptyp_var name ->
@@ -212,7 +220,9 @@ and transl_type_aux env policy mode styp =
         instance (fst (TyVarMap.find name !used_variables))
       with Not_found ->
         let v =
-          if policy = Univars then new_pre_univar ~name () else newvar ~name ()
+          (* CJC XXX same question about policy *)
+          if policy = Univars then new_pre_univar ~name Type_layout.any
+          else newvar ~name Type_layout.any
         in
         used_variables := TyVarMap.add name (v, styp.ptyp_loc) !used_variables;
         v
@@ -357,12 +367,12 @@ and transl_type_aux env policy mode styp =
           in
           let row = { row_closed = true; row_fields = fields;
                       row_bound = (); row_name = Some (path, ty_args);
-                      row_fixed = None; row_more = newvar () } in
+                      row_fixed = None; row_more = newvar Type_layout.value } in
           let static = Btype.static_row row in
           let row =
             if static then { row with row_more = newty Tnil }
             else if policy <> Univars then row
-            else { row with row_more = new_pre_univar () }
+            else { row with row_more = new_pre_univar Type_layout.value }
           in
           newty (Tvariant row)
       | Tobject (fi, _) ->
@@ -389,7 +399,7 @@ and transl_type_aux env policy mode styp =
           ty
         with Not_found ->
           if !Clflags.principal then begin_def ();
-          let t = newvar () in
+          let t = newvar Type_layout.value in
           used_variables :=
             TyVarMap.add alias (t, styp.ptyp_loc) !used_variables;
           let ty = transl_type env policy mode st in
@@ -416,7 +426,7 @@ and transl_type_aux env policy mode styp =
   | Ptyp_variant(fields, closed, present) ->
       let name = ref None in
       let mkfield l f =
-        newty (Tvariant {row_fields=[l,f]; row_more=newvar();
+        newty (Tvariant {row_fields=[l,f]; row_more=newvar Type_layout.value;
                          row_bound=(); row_closed=true;
                          row_fixed=None; row_name=None}) in
       let hfields = Hashtbl.create 17 in
@@ -507,14 +517,14 @@ and transl_type_aux env policy mode styp =
             present
       end;
       let row =
-        { row_fields = List.rev fields; row_more = newvar ();
+        { row_fields = List.rev fields; row_more = newvar Type_layout.value;
           row_bound = (); row_closed = (closed = Closed);
           row_fixed = None; row_name = !name } in
       let static = Btype.static_row row in
       let row =
         if static then { row with row_more = newty Tnil }
         else if policy <> Univars then row
-        else { row with row_more = new_pre_univar () }
+        else { row with row_more = new_pre_univar Type_layout.value }
       in
       let ty = newty (Tvariant row) in
       ctyp (Ttyp_variant (tfields, closed, present)) ty
@@ -523,7 +533,9 @@ and transl_type_aux env policy mode styp =
         type parameters *)
       let vars = List.map (fun v -> v.txt) vars in
       begin_def();
-      let new_univars = List.map (fun name -> name, newvar ~name ()) vars in
+      let new_univars =
+        List.map (fun name -> name, newvar ~name Type_layout.value) vars
+      in
       let old_univars = !univars in
       univars := new_univars @ !univars;
       let cty = transl_type env policy mode st in
@@ -546,7 +558,7 @@ and transl_type_aux env policy mode styp =
           [] new_univars
       in
       let ty' = Btype.newgenty (Tpoly(ty, List.rev ty_list)) in
-      unify_var env (newvar()) ty';
+      unify_var env (newvar Type_layout.any) ty';
       ctyp (Ttyp_poly (vars, cty)) ty'
   | Ptyp_package (p, l) ->
       let l, mty = create_package_mty true styp.ptyp_loc env (p, l) in
@@ -629,8 +641,8 @@ and transl_fields env policy o fields =
   let ty_init =
      match o, policy with
      | Closed, _ -> newty Tnil
-     | Open, Univars -> new_pre_univar ()
-     | Open, _ -> newvar () in
+     | Open, Univars -> new_pre_univar Type_layout.value
+     | Open, _ -> newvar Type_layout.value in
   let ty = List.fold_left (fun ty (s, ty') ->
       newty (Tfield (s, Fpresent, ty', ty))) ty_init fields in
   ty, object_fields
@@ -666,8 +678,8 @@ let create_package_mty = create_package_mty false
 let globalize_used_variables env fixed =
   let r = ref [] in
   TyVarMap.iter
-    (fun name (ty, loc) ->
-      let v = new_global_var () in
+    (fun name (ty , loc) ->
+      let v = new_global_var Type_layout.any in
       let snap = Btype.snapshot () in
       if try unify env v ty; true with _ -> Btype.backtrack snap; false
       then try
@@ -675,7 +687,9 @@ let globalize_used_variables env fixed =
       with Not_found ->
         if fixed && Btype.is_Tvar (repr ty) then
           raise(Error(loc, env, Unbound_type_variable ("'"^name)));
-        let v2 = new_global_var () in
+        (* CJC XXX Here we're going to want to check for layout
+           annotations, I think.  Anyway this is definitely wrong *)
+        let v2 = new_global_var Type_layout.value in
         r := (loc, v, v2) :: !r;
         type_variables := TyVarMap.add name v2 !type_variables)
     !used_variables;
@@ -716,7 +730,7 @@ let transl_simple_type_univars env styp =
         let v = repr v in
         match v.desc with
           Tvar (name, layout) when v.level = Btype.generic_level ->
-            v.desc <- Tunivar (name, layout); v :: acc
+            v.desc <- Tunivar (name, !layout); v :: acc
         | _ -> acc)
       [] !pre_univars
   in
@@ -744,6 +758,7 @@ let transl_type_scheme env styp =
   let typ = transl_simple_type env false Alloc_mode.Global styp in
   end_def();
   generalize typ.ctyp_type;
+  (* CJC XXX default sort variables to value here (or in the generalize), probably *)
   typ
 
 
@@ -810,7 +825,7 @@ let report_error env ppf = function
         "@[The type %a@ does not expand to a polymorphic variant type@]"
         Printtyp.type_expr ty;
       begin match ty.desc with
-        | Tvar (Some s) ->
+        | Tvar (Some s, _) ->
            (* PR#7012: help the user that wrote 'Foo instead of `Foo *)
            Misc.did_you_mean ppf (fun () -> ["`" ^ s])
         | _ -> ()

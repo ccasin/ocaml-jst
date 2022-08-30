@@ -110,7 +110,7 @@ let enter_type rec_flag env sdecl (id, uid) =
       type_private = sdecl.ptype_private;
       type_manifest =
         begin match sdecl.ptype_manifest with None -> None
-        | Some _ -> Some(Ctype.newvar ()) end;
+        | Some _ -> Some (Ctype.newvar Type_layout.any) end;
       type_variance = Variance.unknown_signature ~injective:false ~arity;
       type_separability = Types.Separability.default_signature ~arity;
       type_is_newtype = false;
@@ -128,7 +128,9 @@ let update_type temp_env env id loc =
   let decl = Env.find_type path temp_env in
   match decl.type_manifest with None -> ()
   | Some ty ->
-      let params = List.map (fun _ -> Ctype.newvar ()) decl.type_params in
+      let params =
+        List.map (fun _ -> Ctype.newvar Type_layout.any) decl.type_params
+      in
       try Ctype.unify env (Ctype.newconstr path params) ty
       with Ctype.Unify trace ->
         raise (Error(loc, Type_clash (env, trace)))
@@ -387,7 +389,16 @@ let transl_declaration env sdecl (id, uid) =
             (fun () -> make_cstr scstr)
         in
         let tcstrs, cstrs = List.split (List.map make_cstr scstrs) in
-        let rep = if unbox then Variant_unboxed else Variant_regular in
+        let is_constant (constructor : Types.constructor_declaration) =
+            match constructor.cd_args with
+            | Cstr_tuple [] -> true
+            | _ -> false
+        in
+        let rep =
+          if unbox then Variant_unboxed
+          else if List.for_all is_constant cstrs then Variant_immediate
+          else Variant_regular
+        in
           Ttype_variant tcstrs, Type_variant (cstrs, rep)
       | Ptype_record lbls ->
           let lbls, lbls' = transl_labels env true lbls in
@@ -482,7 +493,7 @@ let rec check_constraints_rec env loc visited ty =
   visited := TypeSet.add ty !visited;
   match ty.desc with
   | Tconstr (path, args, _) ->
-      let args' = List.map (fun _ -> Ctype.newvar ()) args in
+      let args' = List.map (fun _ -> Ctype.newvar Type_layout.any) args in
       let ty' = Ctype.newconstr path args' in
       begin try Ctype.enforce_constraints env ty'
       with Ctype.Unify _ -> assert false
@@ -736,7 +747,10 @@ let check_well_founded env loc path to_check ty =
 
 let check_well_founded_manifest env loc path decl =
   if decl.type_manifest = None then () else
-  let args = List.map (fun _ -> Ctype.newvar()) decl.type_params in
+  (* CJC XXX type params *)
+  let args =
+    List.map (fun _ -> Ctype.newvar Type_layout.any) decl.type_params
+  in
   check_well_founded env loc path (Path.same path) (Ctype.newconstr path args)
 
 let check_well_founded_decl env loc path decl to_check =
@@ -1637,8 +1651,9 @@ let transl_with_constraint id row_path ~sig_env ~sig_decl ~outer_env sdecl =
 (* Approximate a type declaration: just make all types abstract *)
 
 let abstract_type_decl ~injective arity =
+  (* CJC XXX where is this used?  revisit after I add better kinding for parameters *)
   let rec make_params n =
-    if n <= 0 then [] else Ctype.newvar() :: make_params (n-1) in
+    if n <= 0 then [] else Ctype.newvar Type_layout.any :: make_params (n-1) in
   Ctype.begin_def();
   let decl =
     { type_params = make_params arity;

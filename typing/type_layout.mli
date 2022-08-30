@@ -31,13 +31,14 @@ module Violation : sig
 end
 
 val any : t
+val any_sort : unit -> t
 val value : t
 val immediate : t
 val immediate64 : t
 val void : t
 
 val equal : t -> t -> bool
-val intersection : t -> t -> (t, string) Result.t  (* CJC XXX error type *)
+val intersection : t -> t -> (t, Violation.t) Result.t  (* CJC XXX error type *)
 
 (** [sublayout t1 t2] returns [Ok ()] iff [t1] is a sublayout of
     of [t2].  The current hierarchy is:
