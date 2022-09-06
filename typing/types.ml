@@ -478,7 +478,10 @@ let may_equal_constr c1 c2 =
      | tag1, tag2 ->
          equal_tag tag1 tag2)
 
-let kind_abstract = Type_abstract { layout = Any }
+let kind_abstract ~layout = Type_abstract { layout }
+let kind_abstract_value = kind_abstract ~layout:(Sort Value)
+let kind_abstract_immediate = kind_abstract ~layout:Immediate
+let kind_abstract_any = kind_abstract ~layout:Any
 
 let decl_is_abstract decl =
   match decl.type_kind with

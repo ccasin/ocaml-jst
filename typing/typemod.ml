@@ -551,7 +551,7 @@ let merge_constraint initial_env remove_aliases loc sg constr =
             type_params =
               List.map (fun _ -> Btype.newgenvar Type_layout.value) sdecl.ptype_params;
             type_arity = arity;
-            type_kind = Types.kind_abstract;
+            type_kind = Types.kind_abstract ~layout:Type_layout.value;
             type_private = Private;
             type_manifest = None;
             type_variance =

@@ -98,6 +98,8 @@ module Unification_trace = struct
     | Escape of {context:type_expr option; kind: 'a escape}
     | Incompatible_fields of {name:string; diff:type_expr diff }
     | Rec_occur of type_expr * type_expr
+    | Bad_layout of Type_layout.Violation.t
+
 
   type t = desc elt list
   let short t = { t; expanded = None }
@@ -114,7 +116,7 @@ module Unification_trace = struct
     | Rec_occur (_,_)
     | Escape {kind=(Univ _ | Self|Constructor _ | Module_type _ ); _}
     | Variant _ | Obj _
-    | Incompatible_fields _ as x -> x
+    | Incompatible_fields _ | Bad_layout _ as x -> x
   let map f = List.map (map_elt f)
 
 
@@ -1845,7 +1847,7 @@ let constrain_type_layout ~fixed env ty1 layout2 =
       let layout1 =
         begin match Env.find_type p1 env with
         | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
-        | exception Not_found -> Any
+        | exception Not_found -> (Printf.printf "Hey richard we got here\n%!"; Any)
         end
       in Type_layout.sublayout layout1 layout2
   | Tvariant row ->
@@ -1859,7 +1861,7 @@ let constrain_type_layout ~fixed env ty1 layout2 =
               | _, (Rpresent (Some _) | Reither (false, _, _, _)) -> true
               | _ -> false)
             row.row_fields
-        then Any
+       then Any
         else Immediate
       in Type_layout.sublayout layout1 layout2
   | Tvar (_, rlayout1) ->
@@ -1914,13 +1916,11 @@ let check_decl_layout env decl layout =
           | None -> err
           | Some ty -> check_type_layout env ty layout
 
-exception Layout of Type_layout.Violation.t
-
 (* CJC XXX locations and better error reporting *)
 let constrain_type_layout_exn env ty layout =
   match constrain_type_layout env ty layout with
   | Ok () -> ()
-  | Error err -> raise (Layout err)
+  | Error err -> raise (Unify [Bad_layout err])
 
 (* Make sure that the type parameters of the type constructor [ty]
    respect the type constraints *)
@@ -5042,7 +5042,10 @@ let nondep_type_decl env mid is_covariant decl =
     let tk =
       try map_kind (nondep_type_rec env mid) decl.type_kind
       with Nondep_cannot_erase _ when is_covariant ->
+        (* CJC XXX: Is this layout precise enough?  Think through uses of
+           nondep_type_decl *)
         Types.kind_abstract
+          ~layout:(Type_layout.layout_bound_of_kind decl.type_kind)
     and tm, priv =
       match decl.type_manifest with
       | None -> None, decl.type_private

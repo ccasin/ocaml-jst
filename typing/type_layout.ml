@@ -39,9 +39,6 @@ module Constant = struct
     | Types.Immediate -> Immediate
 end
 
-module Violation = struct
-  type nonrec t = Not_a_sublayout of t * t
-end
 
 let of_layout_annotation annot =
   match annot with
@@ -62,10 +59,28 @@ let sort_to_string = function
 
 let to_string = function
   | Any -> "any"
-  | Sort sort -> sort_to_string sort
+  | Sort sort -> "sort " ^ sort_to_string sort
   | Immediate64 -> "immediate64"
   | Immediate -> "immediate"
 
+module Violation = struct
+  type nonrec t = Not_a_sublayout of t * t
+
+  let report_with_name name ppf t =
+    let pr fmt = Format.fprintf ppf fmt in
+    let name = StringLabels.capitalize_ascii name in
+    match t with
+    | Not_a_sublayout (l1,l2) ->
+        pr "%s has layout %s, which is not a sublayout of %s." name
+          (to_string l1) (to_string l2)
+
+  (* let report ppf t =
+   *   let pr fmt = Format.fprintf ppf fmt in
+   *   match t with
+   *   | Not_a_sublayout (l1,l2) ->
+   *       pr "Layout %s is not a sublayout of %s." name
+   *  (Type_layout.to_string l1) (Type_layout.to_string l2) *)
+end
 (* let of_kind kind =
  *   match kind with
  *   | Type_abstract {layout} -> layout

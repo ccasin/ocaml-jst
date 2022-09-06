@@ -100,13 +100,17 @@ let enter_type rec_flag env sdecl (id, uid) =
     | Asttypes.Recursive -> true
   in
   let arity = List.length sdecl.ptype_params in
+  let layout =
+    Type_layout.of_layout_annotation
+      (Builtin_attributes.layout sdecl.ptype_attributes)
+  in
   if not needed then env else
   let decl =
     { type_params =
         (* CJC XXX todo: need to add way to annotate layouts on type parameters *)
         List.map (fun _ -> Btype.newgenvar Type_layout.value) sdecl.ptype_params;
       type_arity = arity;
-      type_kind = Types.kind_abstract;
+      type_kind = Types.kind_abstract ~layout;
       type_private = sdecl.ptype_private;
       type_manifest =
         begin match sdecl.ptype_manifest with None -> None
@@ -1576,7 +1580,8 @@ let transl_with_constraint id row_path ~sig_env ~sig_decl ~outer_env sdecl =
     if arity_ok && man <> None then
       sig_decl.type_kind, sig_decl.type_unboxed_default
     else
-      Types.kind_abstract, false
+      (* CJC XXX *)
+      Types.kind_abstract_any, false
   in
   let new_sig_decl =
     { type_params = params;
@@ -1658,7 +1663,7 @@ let abstract_type_decl ~injective arity =
   let decl =
     { type_params = make_params arity;
       type_arity = arity;
-      type_kind = Types.kind_abstract;
+      type_kind = Types.kind_abstract_any;
       type_private = Public;
       type_manifest = None;
       type_variance = Variance.unknown_signature ~injective ~arity;

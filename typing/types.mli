@@ -449,7 +449,10 @@ and constructor_arguments =
   | Cstr_tuple of type_expr list
   | Cstr_record of label_declaration list
 
-val kind_abstract : type_kind
+val kind_abstract : layout:layout -> type_kind
+val kind_abstract_value : type_kind
+val kind_abstract_immediate : type_kind
+val kind_abstract_any : type_kind
 val decl_is_abstract : type_declaration -> bool
 
 type extension_constructor =

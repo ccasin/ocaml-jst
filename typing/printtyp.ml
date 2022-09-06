@@ -1673,7 +1673,7 @@ let dummy =
   {
     type_params = [];
     type_arity = 0;
-    type_kind = Types.kind_abstract;
+    type_kind = Types.kind_abstract_value;
     type_private = Public;
     type_manifest = None;
     type_variance = [];
@@ -2141,6 +2141,8 @@ let explanation intro prev env = function
                 {[ The type int occurs inside int list -> 'a |}
            *)
       end
+  | Trace.Bad_layout e ->
+      Some (dprintf "@,@[<hov>%a@]" (Type_layout.Violation.report_with_name "XXX CJC") e)
 
 let mismatch intro env trace =
   Trace.explain trace (fun ~prev h -> explanation intro prev env h)

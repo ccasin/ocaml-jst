@@ -355,12 +355,8 @@ let report_type_mismatch0 first second decl ppf err =
       pr "Their internal representations differ:@ %s %s %s."
          (choose ord first second) decl
          "uses unboxed representation"
-  | Layout violation ->
-      let first = StringLabels.capitalize_ascii first in
-      match violation with
-      | Type_layout.Violation.Not_a_sublayout (l1,l2) ->
-          pr "%s has layout %s, which is not a sublayout of %s." first
-            (Type_layout.to_string l1) (Type_layout.to_string l2)
+  | Layout v ->
+      Type_layout.Violation.report_with_name first ppf v
 
 let report_type_mismatch first second decl ppf err =
   if err = Manifest then () else

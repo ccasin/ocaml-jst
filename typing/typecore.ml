@@ -4499,7 +4499,7 @@ and type_expect_
       let decl = {
         type_params = [];
         type_arity = 0;
-        type_kind = Types.kind_abstract;
+        type_kind = Types.kind_abstract ~layout;
         type_private = Public;
         type_manifest = None;
         type_variance = [];
@@ -5940,7 +5940,9 @@ and type_let
          in
          attrs, pat_mode, exp_mode, spat)
       spat_sexp_list in
-  let nvs = List.map (fun _ -> newvar (Type_layout.any_sort ())) spatl in
+  (* Layouts: Type_layout.value to be relaxed to Type_layout.any_sort when we
+     allow binding other sorts *)
+  let nvs = List.map (fun _ -> newvar Type_layout.value) spatl in
   let (pat_list, new_env, force, pvs, unpacks) =
     type_pattern_list Value existential_context env spatl nvs allow in
   let attrs_list = List.map (fun (attrs, _, _, _) -> attrs) spatl in
