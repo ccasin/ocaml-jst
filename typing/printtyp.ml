@@ -2141,8 +2141,10 @@ let explanation intro prev env = function
                 {[ The type int occurs inside int list -> 'a |}
            *)
       end
-  | Trace.Bad_layout e ->
-      Some (dprintf "@,@[<hov>%a@]" (Type_layout.Violation.report_with_name "XXX CJC") e)
+  | Trace.Bad_layout (t,e) ->
+      Some (dprintf "@,@[<hov>%a@]"
+              (Type_layout.Violation.report_with_offender
+                 ~offender:(fun ppf -> type_expr ppf t)) e)
 
 let mismatch intro env trace =
   Trace.explain trace (fun ~prev h -> explanation intro prev env h)

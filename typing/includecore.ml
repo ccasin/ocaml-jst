@@ -356,7 +356,7 @@ let report_type_mismatch0 first second decl ppf err =
          (choose ord first second) decl
          "uses unboxed representation"
   | Layout v ->
-      Type_layout.Violation.report_with_name first ppf v
+      Type_layout.Violation.report_with_name ~name:first ppf v
 
 let report_type_mismatch first second decl ppf err =
   if err = Manifest then () else

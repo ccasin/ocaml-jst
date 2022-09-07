@@ -98,7 +98,7 @@ module Unification_trace = struct
     | Escape of {context:type_expr option; kind: 'a escape}
     | Incompatible_fields of {name:string; diff:type_expr diff }
     | Rec_occur of type_expr * type_expr
-    | Bad_layout of Type_layout.Violation.t
+    | Bad_layout of type_expr * Type_layout.Violation.t
 
 
   type t = desc elt list
@@ -1847,7 +1847,7 @@ let constrain_type_layout ~fixed env ty1 layout2 =
       let layout1 =
         begin match Env.find_type p1 env with
         | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
-        | exception Not_found -> (Printf.printf "Hey richard we got here\n%!"; Any)
+        | exception Not_found -> Any
         end
       in Type_layout.sublayout layout1 layout2
   | Tvariant row ->
@@ -1920,7 +1920,7 @@ let check_decl_layout env decl layout =
 let constrain_type_layout_exn env ty layout =
   match constrain_type_layout env ty layout with
   | Ok () -> ()
-  | Error err -> raise (Unify [Bad_layout err])
+  | Error err -> raise (Unify [Bad_layout (ty,err)])
 
 (* Make sure that the type parameters of the type constructor [ty]
    respect the type constraints *)

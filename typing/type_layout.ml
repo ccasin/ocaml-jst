@@ -66,7 +66,14 @@ let to_string = function
 module Violation = struct
   type nonrec t = Not_a_sublayout of t * t
 
-  let report_with_name name ppf t =
+  let report_with_offender ~offender ppf t =
+    let pr fmt = Format.fprintf ppf fmt in
+    match t with
+    | Not_a_sublayout (l1,l2) ->
+        pr "%t has layout %s, which is not a sublayout of %s." offender
+          (to_string l1) (to_string l2)
+
+  let report_with_name ~name ppf t =
     let pr fmt = Format.fprintf ppf fmt in
     let name = StringLabels.capitalize_ascii name in
     match t with

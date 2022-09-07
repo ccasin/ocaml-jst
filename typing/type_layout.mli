@@ -28,7 +28,9 @@ end
 
 module Violation : sig
   type nonrec t = Not_a_sublayout of t * t
-  val report_with_name : string -> Format.formatter -> t -> unit
+  val report_with_offender :
+    offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
+  val report_with_name : name:string -> Format.formatter -> t -> unit
 end
 
 val any : t

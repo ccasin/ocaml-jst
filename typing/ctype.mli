@@ -70,7 +70,7 @@ module Unification_trace: sig
     | Escape of {context: type_expr option; kind:'a escape}
     | Incompatible_fields of {name:string; diff: type_expr diff }
     | Rec_occur of type_expr * type_expr
-    | Bad_layout of Type_layout.Violation.t
+    | Bad_layout of type_expr * Type_layout.Violation.t
 
   type t = desc elt list
 

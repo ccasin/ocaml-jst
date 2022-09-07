@@ -262,7 +262,8 @@ let value_kind env ty =
             | None -> (num_nodes_visited, Value Pgenval)
             | Some (num_nodes_visited, _, consts, _, non_consts) ->
               match non_consts with
-              | [] -> assert false  (* See [List.for_all is_constant], above *)
+              | [] -> assert false
+                (* Should be handled by the Variant_immediate case above *)
               | _::_ ->
                 (num_nodes_visited, Value (Pvariant { consts; non_consts }))
             end
