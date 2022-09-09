@@ -1350,8 +1350,9 @@ let instance_constructor ?in_pattern cstr =
     | None -> ()
     | Some (env, expansion_scope) ->
         let process existential =
-          (* CJC XXX - defaulting to Type_layout.value for now, which is wrong,
-             probably want to record this info in constructor_description *)
+          (* CJC XXX - defaulting to Type_layout.value for now, which is
+             probably wrong.  Probably want to record this info in
+             constructor_description *)
           let decl = new_declaration expansion_scope None Type_layout.value in
           let name = existential_name cstr existential in
           let path =
@@ -1847,7 +1848,7 @@ let constrain_type_layout ~fixed env ty1 layout2 =
       let layout1 =
         begin match Env.find_type p1 env with
         | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
-        | exception Not_found -> Any
+        | exception Not_found -> Type_layout.any
         end
       in Type_layout.sublayout layout1 layout2
   | Tvariant row ->
@@ -1867,7 +1868,11 @@ let constrain_type_layout ~fixed env ty1 layout2 =
   | Tvar (_, rlayout1) ->
       if fixed then Type_layout.sublayout !rlayout1 layout2
       else
-        Result.map ignore (Type_layout.intersection !rlayout1 layout2)
+        (* CJC XXX were we ignoring the result, previously?
+
+           Result.map ignore (Type_layout.intersection !rlayout1 layout2) *)
+        Result.map (fun layout1 -> rlayout1 := layout1)
+          (Type_layout.intersection !rlayout1 layout2)
   | Tarrow _ -> Type_layout.sublayout Type_layout.value layout2
   | Ttuple _ -> Type_layout.sublayout Type_layout.value layout2
   | Tobject _ -> Type_layout.sublayout Type_layout.value layout2

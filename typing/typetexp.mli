@@ -65,6 +65,9 @@ type error =
   | Opened_object of Path.t option
   | Not_an_object of type_expr
   | Local_not_enabled
+  | Non_value_function of
+      {is_arg : bool; typ : type_expr; err : Type_layout.Violation.t}
+
 
 exception Error of Location.t * Env.t * error
 

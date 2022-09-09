@@ -1316,8 +1316,9 @@ let unify_head_only ~refine loc env ty constr =
   let ty_res = repr ty_res in
   match ty_res.desc with
   | Tconstr(p,args,m) ->
+      (* CJC XXX - I need to compute the layout from the desc here? *)
       ty_res.desc <-
-        Tconstr(p,List.map (fun _ -> newvar Type_layout.value) args,m);
+        Tconstr(p,List.map (fun _ -> newvar Type_layout.any) args,m);
       enforce_constraints !env ty_res;
       unify_pat_types ~refine loc env ty_res ty
   | _ -> assert false
@@ -4482,9 +4483,10 @@ and type_expect_
       re { exp with exp_extra =
              (Texp_poly cty, loc, sexp.pexp_attributes) :: exp.exp_extra }
   | Pexp_newtype({txt=name}, sbody) ->
-      (* CJC XXX layouts wrong - revisit when I do the annotations properly *)
+    (* CJC XXX Defaulting locally abstract types to value - may revisit in the
+       future *)
       let layout =
-        Type_layout.of_layout_annotation
+        Type_layout.of_layout_annotation ~default:Type_layout.value
           (Builtin_attributes.layout sexp.pexp_attributes)
       in
       let ty =

@@ -40,9 +40,9 @@ module Constant = struct
 end
 
 
-let of_layout_annotation annot =
+let of_layout_annotation annot ~default =
   match annot with
-  | None -> Any
+  | None -> default
   | Some Builtin_attributes.Any         -> Any
   | Some Builtin_attributes.Value       -> Sort Value
   | Some Builtin_attributes.Void        -> Sort Void
@@ -169,4 +169,3 @@ let sublayout sub super =
   | _, _ ->
       if equal sub super then Ok ()
       else Error (Violation.Not_a_sublayout (sub,super))
-

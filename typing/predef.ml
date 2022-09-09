@@ -229,10 +229,10 @@ let common_initial_env add_type add_extension empty_env =
   add_type1 ident_array ~variance:Variance.full ~separability:Separability.Ind (
   add_type ident_exn ~kind:Type_open (
   add_type ident_unit
-    ~kind:(Type_variant([cstr ident_void []], Variant_regular)) (
+    ~kind:(Type_variant([cstr ident_void []], Variant_immediate)) (
   add_type ident_bool
     ~kind:(Type_variant([cstr ident_false []; cstr ident_true []],
-                        Variant_regular)) (
+                        Variant_immediate)) (
   add_type ident_float (
   add_type ident_string (
   add_type ident_char ~kind:Types.kind_abstract_immediate (

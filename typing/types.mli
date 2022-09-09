@@ -62,7 +62,7 @@ type type_expr =
     id: int }
 
 and type_desc =
-  (* CJC XXX todo record *)
+  (* CJC XXX todo make this tuple a record *)
   | Tvar of string option * layout ref
   (*  | Tvar of { name : string option; mutable layout : layout } *)
   (** [Tvar (Some "a")] ==> ['a] or ['_a]

@@ -101,14 +101,23 @@ let enter_type rec_flag env sdecl (id, uid) =
   in
   let arity = List.length sdecl.ptype_params in
   let layout =
-    Type_layout.of_layout_annotation
+    (* CJC XXX : Defaulting to value here - maybe we want to do some
+       approximating instead.  This comes up in a mutually defined type group,
+       e.g.,:
+
+       type t = foo -> int
+       and foo = Bar
+
+       To check t, we need to know foo's layout is value (so it can be used as a
+       function argument).  (recursive_types.ml in test suite) *)
+    Type_layout.of_layout_annotation ~default:Type_layout.value
       (Builtin_attributes.layout sdecl.ptype_attributes)
   in
   if not needed then env else
   let decl =
     { type_params =
         (* CJC XXX todo: need to add way to annotate layouts on type parameters *)
-        List.map (fun _ -> Btype.newgenvar Type_layout.value) sdecl.ptype_params;
+        List.map (fun _ -> Btype.newgenvar Type_layout.any) sdecl.ptype_params;
       type_arity = arity;
       type_kind = Types.kind_abstract ~layout;
       type_private = sdecl.ptype_private;
@@ -340,11 +349,50 @@ let transl_declaration env sdecl (id, uid) =
       Option.is_none unboxed_attr
     | _ -> false, false (* Not unboxable, mark as boxed *)
   in
-  let layout_annotation = Builtin_attributes.layout sdecl.ptype_attributes in
+  let layout_annotation =
+    (* CJC XXX: This is a special case for the case of "really" abstract types -
+       those without a kind _or_ a manifest.  We want to default them to value,
+       in the absence of an annotation.
+
+       Really, the right place to do this would be wherever we compare the
+       layout and the manifest.  But I'm not doign that anywhere right now!
+       This needs to be reworked.
+
+       The way it works right now is, if you have an abstract type with a
+       manifest and no layout annotation, we make it a:
+
+         Tabstract {layout = Any}
+
+       So, for example, that's what you get in your type declaration if you
+       write `type t = int` in a signature.  Now, this seems wrong, but it
+       actually works out fine when there is a manifest, because
+       Ctype.constrain_type_layout is going to look at the manifest if the type
+       is abstract.  But, constrain_type_layout doesn't even bother to update
+       the type_kind, so we end up looking at the manifest every time we have to
+       check this type's layout, which is dumb.
+
+       We should, at a minimum, have that function update the layout.  But maybe
+       we should just prepopulate the layout?  Maybe we can't do it here because
+       of recusive types, but surely we could do it when we update the layouts
+       with [update_decls_layout] at the end of [transl_type_decl].  Currently
+       that function only looks at the kind - maybe it can look at the manifest
+       too.  We could also default non-manifest types to value at that time,
+       too.
+    *)
+    match Builtin_attributes.layout sdecl.ptype_attributes with
+    | Some l -> Some l
+    | None ->
+      match sdecl.ptype_manifest with
+      | Some _ -> None
+      | None -> Some Builtin_attributes.Value
+  in
   let (tkind, kind) =
     match sdecl.ptype_kind with
       | Ptype_abstract ->
-        let layout = Type_layout.of_layout_annotation layout_annotation in
+        let layout =
+          Type_layout.of_layout_annotation ~default:Type_layout.any
+            layout_annotation
+        in
         Ttype_abstract, Type_abstract {layout}
       | Ptype_variant scstrs ->
         if List.exists (fun cstr -> cstr.pcd_res <> None) scstrs then begin
@@ -681,7 +729,7 @@ let update_decl_layout env decl =
       let rep =
         match imm, rep with
         | _, Variant_unboxed -> rep
-        | true, (Variant_regular | Variant_immediate) -> Variant_regular
+        | true, (Variant_regular | Variant_immediate) -> Variant_immediate
         | false, (Variant_regular | Variant_immediate) -> rep
       in
       { decl with type_kind = Type_variant (cstrs, rep) }
@@ -1042,7 +1090,10 @@ let transl_type_decl env rec_flag sdecl_list =
   in
   (* Check layout annotations *)
   List.iter (fun tdecl ->
-    let layout = Type_layout.of_layout_annotation tdecl.typ_layout_annotation in
+    let layout =
+      Type_layout.of_layout_annotation ~default:Type_layout.any
+        tdecl.typ_layout_annotation
+    in
     match Ctype.check_decl_layout env tdecl.typ_type layout with
     | Ok () -> ()
     | Error v -> raise(Error(tdecl.typ_loc, Layout v)))
@@ -1958,9 +2009,7 @@ let report_error ppf = function
          a direct argument or result of the primitive,@ \
          it should not occur deeply into its type.@]"
         (match kind with Unboxed -> "@unboxed" | Untagged -> "@untagged")
-  | Layout (Type_layout.Violation.Not_a_sublayout (l1,l2)) ->
-      fprintf ppf "@[This type has layout %s, which is not a sublayout of %s.@]"
-        (Type_layout.to_string l1) (Type_layout.to_string l2)
+  | Layout v -> Type_layout.Violation.report_with_name ~name:"This type" ppf v
   | Bad_unboxed_attribute msg ->
       fprintf ppf "@[This type cannot be unboxed because@ %s.@]" msg
   | Separability (Typedecl_separability.Non_separable_evar evar) ->

@@ -48,6 +48,8 @@ type error =
   | Opened_object of Path.t option
   | Not_an_object of type_expr
   | Local_not_enabled
+  | Non_value_function of
+      {is_arg : bool; typ : type_expr; err : Type_layout.Violation.t}
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -250,6 +252,23 @@ and transl_type_aux env policy mode styp =
           in
           let arg_mode = Alloc_mode.of_const arg_mode in
           let ret_mode = Alloc_mode.of_const ret_mode in
+          (* Layouts: For now, we require function arguments and returns to have
+             layout value. *)
+          (* CJC XXX is this the right place to do that? *)
+          begin match
+            constrain_type_layout env arg_ty Type_layout.value,
+            constrain_type_layout env ret_cty.ctyp_type Type_layout.value
+          with
+          | Ok (), Ok () -> ()
+          | Error e, _ ->
+            raise (Error(arg.ptyp_loc, env,
+                         Non_value_function
+                           {is_arg = true; err = e; typ = arg_ty}))
+          | _, Error e ->
+            raise (Error(ret.ptyp_loc, env,
+                         Non_value_function
+                           {is_arg = false; err = e; typ = ret_cty.ctyp_type}))
+          end;
           let ty =
             newty
               (Tarrow((l,arg_mode,ret_mode), arg_ty, ret_cty.ctyp_type, Cok))
@@ -689,7 +708,7 @@ let globalize_used_variables env fixed =
           raise(Error(loc, env, Unbound_type_variable ("'"^name)));
         (* CJC XXX Here we're going to want to check for layout
            annotations, I think.  Anyway this is definitely wrong *)
-        let v2 = new_global_var Type_layout.value in
+        let v2 = new_global_var Type_layout.any in
         r := (loc, v, v2) :: !r;
         type_variables := TyVarMap.add name v2 !type_variables)
     !used_variables;
@@ -865,6 +884,11 @@ let report_error env ppf = function
   | Local_not_enabled ->
       fprintf ppf "@[The local extension is disabled@ \
                      To enable it, pass the '-extension local' flag@]"
+  | Non_value_function {is_arg; typ; err} ->
+    let s = if is_arg then "argument" else "return" in
+    fprintf ppf "@[Function %s types must have layout value.@ \ %a@]"
+      s (Type_layout.Violation.report_with_offender
+           ~offender:(fun ppf -> Printtyp.type_expr ppf typ)) err
 
 let () =
   Location.register_error_of_exn
