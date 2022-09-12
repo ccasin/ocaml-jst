@@ -101,7 +101,7 @@ let enter_type rec_flag env sdecl (id, uid) =
   in
   let arity = List.length sdecl.ptype_params in
   let layout =
-    (* CJC XXX : Defaulting to value here - maybe we want to do some
+    (* CJC XXX
        approximating instead.  This comes up in a mutually defined type group,
        e.g.,:
 

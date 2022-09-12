@@ -49,8 +49,8 @@ let of_layout_annotation annot ~default =
   | Some Builtin_attributes.Immediate64 -> Immediate64
   | Some Builtin_attributes.Immediate   -> Immediate
 
-(* let layout_of_attributes attrs =
- *   of_layout_annotation (Builtin_attributes.layout attrs) *)
+let layout_of_attributes ~default attrs =
+  of_layout_annotation ~default (Builtin_attributes.layout attrs)
 
 let sort_to_string = function
   | Var _ -> "<unification variable>"

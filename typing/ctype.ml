@@ -1841,7 +1841,7 @@ let get_unboxed_type_representation env ty =
   (* Do not give too much fuel: PR#7424 *)
   get_unboxed_type_representation env ty 100
 
-let constrain_type_layout ~fixed env ty1 layout2 =
+let rec constrain_type_layout ~fixed env ty1 layout2 =
   let rec constrain_type_layout_head ty1 =
   match (repr ty1).desc with
   | Tconstr(p1, _, _) ->
@@ -1883,7 +1883,7 @@ let constrain_type_layout ~fixed env ty1 layout2 =
   | Tpoly (ty, _) -> constrain_type_layout_head ty
   | Tpackage _ -> Type_layout.sublayout Type_layout.value layout2
   in
-  match ty1.desc with
+  match (repr ty1).desc with
   | Tconstr(p, _args, _abbrev) -> begin
       let layout_bound =
         begin match Env.find_type p env with
@@ -1897,6 +1897,7 @@ let constrain_type_layout ~fixed env ty1 layout2 =
         let ty1 = get_unboxed_type_representation env ty1 in
         constrain_type_layout_head ty1
     end
+  | Tpoly (ty, _) -> constrain_type_layout ~fixed env ty layout2
   | _ -> constrain_type_layout_head ty1
 
 let check_type_layout env ty layout =
@@ -2760,8 +2761,11 @@ let unify_eq t1 t2 =
   | Pattern ->
       TypePairs.mem unify_eq_set (order_type_pair t1 t2)
 
-let unify1_var env t1 layout t2 =
-  assert (is_Tvar t1);
+let unify1_var env t1 t2 =
+  let layout = match t1 with
+    | {desc=Tvar (_,layout)} -> !layout
+    | _ -> assert false
+  in
   occur env t1 t2;
   occur_univar env t2;
   let d1 = t1.desc in
@@ -2794,10 +2798,10 @@ let rec unify (env:Env.t ref) t1 t2 =
         unify2 env t1 t2
     | (Tconstr _, Tvar _) when deep_occur t2 t1 ->
         unify2 env t1 t2
-    | (Tvar (_, layout), _) ->
-        unify1_var !env t1 !layout t2
-    | (_, Tvar (_, layout)) ->
-        unify1_var !env t2 !layout t1
+    | (Tvar _, _) ->
+        unify1_var !env t1 t2
+    | (_, Tvar _) ->
+        unify1_var !env t2 t1
     | (Tunivar _, Tunivar _) ->
         unify_univar t1 t2 !univar_pairs;
         update_level !env t1.level t2;
@@ -5226,4 +5230,4 @@ let maybe_pointer_type env typ =
   Result.is_error (check_type_layout env typ layout)
 
 let is_void_type env typ =
-  Result.is_error (check_type_layout env typ Type_layout.void)
+  Result.is_ok (check_type_layout env typ Type_layout.void)

@@ -118,9 +118,13 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
           | Variant_immediate ->
              (Cstr_constant idx_const,
               describe_constructors (idx_const+1) idx_nonconst rem)
-          | Variant_regular ->
-             (Cstr_block idx_nonconst,
-              describe_constructors idx_const (idx_nonconst+1) rem)
+          | Variant_regular -> begin
+              match cd_args with
+              | Cstr_tuple [] -> (Cstr_constant idx_const,
+                  describe_constructors (idx_const+1) idx_nonconst rem)
+              | _  -> (Cstr_block idx_nonconst,
+                  describe_constructors idx_const (idx_nonconst+1) rem)
+            end
         in
         let cstr_name = Ident.name cd_id in
         let existentials, cstr_args, cstr_inlined =

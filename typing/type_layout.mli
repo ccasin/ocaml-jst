@@ -57,7 +57,7 @@ val of_layout_annotation :
   Builtin_attributes.layout_annotation option -> default:t -> t
 
 (** Find a layout in attributes, defaulting to ~default *)
-(*val layout_of_attributes : default:t -> Parsetree.attributes -> t *)
+val layout_of_attributes : default:t -> Parsetree.attributes -> t
 
 
 (* (** The least layout that represents the kind *)

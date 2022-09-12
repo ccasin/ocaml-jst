@@ -139,9 +139,13 @@ let valid_tyvar_name name =
 let transl_type_param env styp =
   (* CJC XXX needs adjusting when I deal with type params.  Maybe take layout as arg? *)
   let loc = styp.ptyp_loc in
+  let layout =
+    Type_layout.layout_of_attributes ~default:Type_layout.value
+      styp.ptyp_attributes
+  in
   match styp.ptyp_desc with
     Ptyp_any ->
-      let ty = new_global_var ~name:"_" Type_layout.any in
+      let ty = new_global_var ~name:"_" layout in
         { ctyp_desc = Ttyp_any; ctyp_type = ty; ctyp_env = env;
           ctyp_loc = loc; ctyp_attributes = styp.ptyp_attributes; }
   | Ptyp_var name ->
@@ -152,7 +156,7 @@ let transl_type_param env styp =
           ignore (TyVarMap.find name !type_variables);
           raise Already_bound
         with Not_found ->
-          let v = new_global_var ~name Type_layout.any in
+          let v = new_global_var ~name layout in
             type_variables := TyVarMap.add name v !type_variables;
             v
       in

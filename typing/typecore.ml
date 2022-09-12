@@ -5944,7 +5944,7 @@ and type_let
       spat_sexp_list in
   (* Layouts: Type_layout.value to be relaxed to Type_layout.any_sort when we
      allow binding other sorts *)
-  let nvs = List.map (fun _ -> newvar Type_layout.value) spatl in
+  let nvs = List.map (fun _ -> newvar (Type_layout.any_sort())) spatl in
   let (pat_list, new_env, force, pvs, unpacks) =
     type_pattern_list Value existential_context env spatl nvs allow in
   let attrs_list = List.map (fun (attrs, _, _, _) -> attrs) spatl in
