@@ -1862,7 +1862,7 @@ let rec constrain_type_layout ~fixed env ty1 layout2 =
               | _, (Rpresent (Some _) | Reither (false, _, _, _)) -> true
               | _ -> false)
             row.row_fields
-       then Any
+        then Sort Value
         else Immediate
       in Type_layout.sublayout layout1 layout2
   | Tvar (_, rlayout1) ->
