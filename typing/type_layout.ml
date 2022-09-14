@@ -49,11 +49,15 @@ let of_layout_annotation annot ~default =
   | Some Builtin_attributes.Immediate64 -> Immediate64
   | Some Builtin_attributes.Immediate   -> Immediate
 
-let layout_of_attributes ~default attrs =
+let of_attributes ~default attrs =
   of_layout_annotation ~default (Builtin_attributes.layout attrs)
 
-let sort_to_string = function
-  | Var _ -> "<unification variable>"
+let rec sort_to_string = function
+  | Var r -> begin
+    match !r with
+    | Some s -> sort_to_string s
+    | None -> "<unification variable>"
+  end
   | Value -> "value"
   | Void -> "void"
 
@@ -64,13 +68,18 @@ let to_string = function
   | Immediate -> "immediate"
 
 module Violation = struct
-  type nonrec t = Not_a_sublayout of t * t
+  type nonrec t =
+    | Not_a_sublayout of t * t
+    | No_intersection of t * t
 
   let report_with_offender ~offender ppf t =
     let pr fmt = Format.fprintf ppf fmt in
     match t with
-    | Not_a_sublayout (l1,l2) ->
+    | Not_a_sublayout (l1, l2) ->
         pr "%t has layout %s, which is not a sublayout of %s." offender
+          (to_string l1) (to_string l2)
+    | No_intersection (l1, l2) ->
+        pr "%t has layout %s, which does not overlap with %s." offender
           (to_string l1) (to_string l2)
 
   let report_with_name ~name ppf t =
@@ -79,6 +88,9 @@ module Violation = struct
     match t with
     | Not_a_sublayout (l1,l2) ->
         pr "%s has layout %s, which is not a sublayout of %s." name
+          (to_string l1) (to_string l2)
+    | No_intersection (l1, l2) ->
+        pr "%s has layout %s, which does not overlap with %s." name
           (to_string l1) (to_string l2)
 
   (* let report ppf t =
@@ -154,10 +166,11 @@ let intersection l1 l2 =
   | (Any, l | l, Any) -> Ok l
   | ((Immediate64 | Immediate) as l, Sort s
     | Sort s, ((Immediate64 | Immediate) as l)) ->
-    if equal_sort Value s then Ok l else Error (failwith "CJC XXX error message")
+    if equal_sort Value s then Ok l
+    else Error (Violation.No_intersection (l1, l2))
   | (Immediate, Immediate64 | Immediate64, Immediate)-> Ok Immediate64
   | _, _ ->
-    if equal l1 l2 then Ok l2 else Error (failwith "CJC XXX error message")
+    if equal l1 l2 then Ok l2 else Error (Violation.No_intersection (l1, l2))
 
 let sublayout sub super =
   match sub, super with

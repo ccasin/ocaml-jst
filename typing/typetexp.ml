@@ -136,13 +136,12 @@ let type_variable loc name =
 let valid_tyvar_name name =
   name <> "" && name.[0] <> '_'
 
-let transl_type_param env styp =
-  (* CJC XXX needs adjusting when I deal with type params.  Maybe take layout as arg? *)
+(* Here we take a layout argument and ignore any layout annotations in the styp.  The
+   expectation is most callers will get the layout from the annotation, but in some cases
+   (objects) we don't want to support those annotations, so it makes sense for the caller
+   to do this. *)
+let transl_type_param env styp layout =
   let loc = styp.ptyp_loc in
-  let layout =
-    Type_layout.layout_of_attributes ~default:Type_layout.value
-      styp.ptyp_attributes
-  in
   match styp.ptyp_desc with
     Ptyp_any ->
       let ty = new_global_var ~name:"_" layout in
@@ -164,11 +163,11 @@ let transl_type_param env styp =
           ctyp_loc = loc; ctyp_attributes = styp.ptyp_attributes; }
   | _ -> assert false
 
-let transl_type_param env styp =
+let transl_type_param env styp layout =
   (* Currently useless, since type parameters cannot hold attributes
      (but this could easily be lifted in the future). *)
   Builtin_attributes.warning_scope styp.ptyp_attributes
-    (fun () -> transl_type_param env styp)
+    (fun () -> transl_type_param env styp layout)
 
 let get_alloc_mode styp =
   match Builtin_attributes.has_local styp.ptyp_attributes with
@@ -227,8 +226,11 @@ and transl_type_aux env policy mode styp =
       with Not_found ->
         let v =
           (* CJC XXX same question about policy *)
-          if policy = Univars then new_pre_univar ~name Type_layout.any
-          else newvar ~name Type_layout.any
+          (* CJC I think value is wrong here.  I think we want to pick Any and then get
+             unified with something (and that this comes up with gadts).  See the failure
+             we get if you put any here in variants5.ml *)
+          if policy = Univars then new_pre_univar ~name Type_layout.value
+          else newvar ~name Type_layout.value
         in
         used_variables := TyVarMap.add name (v, styp.ptyp_loc) !used_variables;
         v
@@ -422,6 +424,7 @@ and transl_type_aux env policy mode styp =
           ty
         with Not_found ->
           if !Clflags.principal then begin_def ();
+          (* CJC XXX value?  Why not any? *)
           let t = newvar Type_layout.value in
           used_variables :=
             TyVarMap.add alias (t, styp.ptyp_loc) !used_variables;

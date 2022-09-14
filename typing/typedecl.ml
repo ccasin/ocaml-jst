@@ -101,7 +101,7 @@ let enter_type rec_flag env sdecl (id, uid) =
   in
   let arity = List.length sdecl.ptype_params in
   let layout =
-    (* CJC XXX
+    (* CJC XXX : Defaulting to value here - maybe we want to do some
        approximating instead.  This comes up in a mutually defined type group,
        e.g.,:
 
@@ -116,8 +116,16 @@ let enter_type rec_flag env sdecl (id, uid) =
   if not needed then env else
   let decl =
     { type_params =
-        (* CJC XXX todo: need to add way to annotate layouts on type parameters *)
-        List.map (fun _ -> Btype.newgenvar Type_layout.any) sdecl.ptype_params;
+        (* CJC XXX: I am confused about enter_type.  It's used for temp_env, which I
+           thought got thrown away, but info from it must stick around somehow because if
+           I make this a sort variable, compilation loops on camlinternalformatbasics
+           while checking recursive functions later in the file. *)
+        List.map (fun ({ptyp_attributes;_},_) ->
+          let layout =
+            Type_layout.of_attributes ~default:(Type_layout.value)
+              ptyp_attributes
+          in
+          Btype.newgenvar layout) sdecl.ptype_params;
       type_arity = arity;
       type_kind = Types.kind_abstract ~layout;
       type_private = sdecl.ptype_private;
@@ -200,7 +208,11 @@ let set_fixed_row env loc p decl =
 let make_params env params =
   let make_param (sty, v) =
     try
-      (transl_type_param env sty, v)
+      let layout =
+        Type_layout.of_attributes ~default:(Type_layout.any_sort ())
+          sty.ptyp_attributes
+      in
+      (transl_type_param env sty layout, v)
     with Already_bound ->
       raise(Error(sty.ptyp_loc, Repeated_parameter))
   in
@@ -679,8 +691,42 @@ let check_coherence env loc dpath decl =
 let check_abbrev env sdecl (id, decl) =
   check_coherence env sdecl.ptype_loc (Path.Pident id) decl
 
-(* Infer more precise layout and which fields are void *)
+(* This currently does two things:
+
+   1) It eliminates any remaining sort variables from type parameters, defaulting to
+   value.  Currently, our approach is that if the user hasn't explicitly annotated a type
+   parameter 'a it is given a sort variable.  We may discover this is something more
+   specific by checking how the type is used by other types in the same collection of
+   mutually recursive type declarations.
+
+   2) It infers more precise layouts basd on the type kind, including which fields of a
+   record are void.  This would be hard to do during [transl_declaration] due to mutually
+   recursive types.
+
+   It is important to do 1 before 2, because otherwise when we check whether things are
+   void we'll actually be making them void.
+
+   CJC XXX: In the future, 1 should apply to existentials too, but I'm not doing that now.
+
+   CJC XXX: I'm only defaulting type_params.  Do I need to default abstract type layouts
+   to value here?  Are there any sort variables lurking in the manifest?
+*)
 let update_decl_layout env decl =
+  let default_params {type_params} =
+    let default_ty {desc} =
+      match desc with
+      | Tvar (_,{contents=Sort (Var s)}) -> begin
+          match !s with
+          | None -> s := Some Types.Value
+          | _ -> ()
+        end
+      | Tvar (_, {contents=(Any | Immediate64 | Immediate
+                           | Sort Value | Sort Void)}) -> ()
+      | _ -> assert false
+    in
+    List.iter default_ty type_params
+  in
+
   let update_label_voids lbls =
     let lbls, imm =
       List.fold_left (fun (lbls, all_void) lbl ->
@@ -712,6 +758,7 @@ let update_decl_layout env decl =
     in
     (List.rev cstrs, imm)
   in
+  default_params decl;
   match decl.type_kind with
   | Type_abstract _ | Type_open -> decl
   | Type_record (lbls, rep) ->

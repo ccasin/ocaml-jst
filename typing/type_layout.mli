@@ -27,7 +27,10 @@ module Constant : sig
 end
 
 module Violation : sig
-  type nonrec t = Not_a_sublayout of t * t
+  type nonrec t =
+    | Not_a_sublayout of t * t
+    | No_intersection of t * t
+
   val report_with_offender :
     offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
   val report_with_name : name:string -> Format.formatter -> t -> unit
@@ -41,7 +44,7 @@ val immediate64 : t
 val void : t
 
 val equal : t -> t -> bool
-val intersection : t -> t -> (t, Violation.t) Result.t  (* CJC XXX error type *)
+val intersection : t -> t -> (t, Violation.t) Result.t
 
 (** [sublayout t1 t2] returns [Ok ()] iff [t1] is a sublayout of
     of [t2].  The current hierarchy is:
@@ -57,7 +60,7 @@ val of_layout_annotation :
   Builtin_attributes.layout_annotation option -> default:t -> t
 
 (** Find a layout in attributes, defaulting to ~default *)
-val layout_of_attributes : default:t -> Parsetree.attributes -> t
+val of_attributes : default:t -> Parsetree.attributes -> t
 
 
 (* (** The least layout that represents the kind *)
