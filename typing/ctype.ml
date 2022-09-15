@@ -2654,7 +2654,17 @@ let add_gadt_equation env source destination =
     let expansion_scope =
       max (Path.scope source) (get_gadt_equations_level ())
     in
-    let decl = new_declaration expansion_scope (Some destination) Any in
+    (* CJC XXX this lookup duplicates work already done in is_instantiable.  Factor out
+       those when clauses instead *)
+    let layout =
+      try
+        match (Env.find_type source !env).type_kind with
+        | Type_abstract {layout} -> layout
+        | _ -> assert false
+      with
+        Not_found -> assert false
+    in
+    let decl = new_declaration expansion_scope (Some destination) layout in
     env := Env.add_local_type source decl !env;
     cleanup_abbrev ()
   end
