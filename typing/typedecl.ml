@@ -720,9 +720,7 @@ let update_decl_layout env decl =
           | None -> s := Some Types.Value
           | _ -> ()
         end
-      | Tvar (_, {contents=(Any | Immediate64 | Immediate
-                           | Sort Value | Sort Void)}) -> ()
-      | _ -> assert false
+      | _ -> ()
     in
     List.iter default_ty type_params
   in
