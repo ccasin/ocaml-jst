@@ -182,3 +182,19 @@ let sublayout sub super =
   | _, _ ->
       if equal sub super then Ok ()
       else Error (Violation.Not_a_sublayout (sub,super))
+
+(** This is used in reify.  We default to value as a hack to avoid having rigid sort
+   variables. *)
+let reify_sort s =
+  match sort_repr s with
+  | Var r -> begin
+      match !r with
+      | None -> r := Some Value
+      | Some _ -> ()
+    end
+  | _ -> ()
+
+let reify layout =
+  match layout with
+  | Sort s -> reify_sort s
+  | (Any | Immediate64 | Immediate) -> ()

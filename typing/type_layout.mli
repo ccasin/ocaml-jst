@@ -74,3 +74,4 @@ val layout_bound_of_kind : Types.type_kind -> t
 (** Pretty printing *)
 val to_string : t -> string
 
+val reify : t -> unit

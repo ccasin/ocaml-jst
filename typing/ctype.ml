@@ -2335,7 +2335,6 @@ let get_gadt_equations_level () =
   | None -> assert false
   | Some x -> x
 
-
 (* a local constraint can be added only if the rhs
    of the constraint does not contain any Tvars.
    They need to be removed using this function *)
@@ -2361,6 +2360,7 @@ let reify env t =
       visited := TypeSet.add ty !visited;
       match ty.desc with
         Tvar (o,layout) ->
+          Type_layout.reify !layout;
           let path, t = create_fresh_constr ty.level o !layout in
           link_type ty t;
           if ty.level < fresh_constr_scope then
@@ -2646,6 +2646,27 @@ let find_lowest_level ty =
 let find_expansion_scope env path =
   (Env.find_type path env).type_expansion_scope
 
+
+let layout_of_abstract_type_declaration env p =
+  try
+    match (Env.find_type p env).type_kind with
+    | Type_abstract {layout} -> layout
+    | _ -> assert false
+  with
+    Not_found -> assert false
+
+let add_layout_equation env destination layout1 =
+  let layout2 = layout_of_abstract_type_declaration !env destination in
+  match Type_layout.intersection layout1 layout2 with
+  | Error err -> raise (Unify [Bad_layout (newconstr destination [],err)])
+  | Ok layout ->
+    if Type_layout.equal layout layout2 then ()
+    else begin
+      let decl = Env.find_type destination !env in
+      let decl = {decl with type_kind = Type_abstract {layout}} in
+      env := Env.add_local_type destination decl !env
+    end
+
 let add_gadt_equation env source destination =
   (* Format.eprintf "@[add_gadt_equation %s %a@]@."
     (Path.name source) !Btype.print_raw destination; *)
@@ -2656,14 +2677,18 @@ let add_gadt_equation env source destination =
     in
     (* CJC XXX this lookup duplicates work already done in is_instantiable.  Factor out
        those when clauses instead *)
-    let layout =
-      try
-        match (Env.find_type source !env).type_kind with
-        | Type_abstract {layout} -> layout
-        | _ -> assert false
-      with
-        Not_found -> assert false
+    (* Layouts: computing the actual layout here is required, not just for
+       effiency.  When we check the layout later, we may not be able to see the
+       local equation because of its level. *)
+    let layout = layout_of_abstract_type_declaration !env source in
+    (* CJC : If this is not a tconstr, or the tconstr is not abstract (?), we
+       need to compute the full, exact layout for destination from the desc.
+       That's a little expensive, but this case is rare.  In that case we don't need to add an equation, just to check that the layout is nonempty *)
+    let p_destination = match destination.desc with
+      | Tconstr (p,_,_) -> p
+      | _ -> assert false
     in
+    add_layout_equation env p_destination layout;
     let decl = new_declaration expansion_scope (Some destination) layout in
     env := Env.add_local_type source decl !env;
     cleanup_abbrev ()
