@@ -117,7 +117,6 @@ let immediate = Immediate
 let immediate64 = Immediate64
 let void = Sort Void
 
-
 let layout_bound_of_record_representation = function
   | Record_regular -> value
   | Record_float -> value

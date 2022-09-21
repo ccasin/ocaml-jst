@@ -364,7 +364,9 @@ let transl_declaration env sdecl (id, uid) =
   let layout_annotation =
     (* CJC XXX: This is a special case for the case of "really" abstract types -
        those without a kind _or_ a manifest.  We want to default them to value,
-       in the absence of an annotation.
+       in the absence of an annotation
+
+       This is wrong - we don't want to pretend they are annotated.
 
        Really, the right place to do this would be wherever we compare the
        layout and the manifest.  But I'm not doign that anywhere right now!
@@ -699,18 +701,15 @@ let check_abbrev env sdecl (id, decl) =
    specific by checking how the type is used by other types in the same collection of
    mutually recursive type declarations.
 
-   2) It infers more precise layouts basd on the type kind, including which fields of a
-   record are void.  This would be hard to do during [transl_declaration] due to mutually
-   recursive types.
+   2) It infers more precise layouts in the type kind, including which fields of
+   a record are void.  This would be hard to do during [transl_declaration] due
+   to mutually recursive types.
 
    It is important to do 1 before 2, because otherwise when we check whether things are
    void we'll actually be making them void.
 
    CJC XXX: In the future, 1 should apply to existentials too, but I'm not doing that now.
-
-   CJC XXX: I'm only defaulting type_params.  Do I need to default abstract type layouts
-   to value here?  Are there any sort variables lurking in the manifest?
-*)
+ *)
 let update_decl_layout env decl =
   let default_params {type_params} =
     let default_ty {desc} =
@@ -1134,6 +1133,16 @@ let transl_type_decl env rec_flag sdecl_list =
       ) tdecls decls
   in
   (* Check layout annotations *)
+  (* CJC XXX this is wrong.  If it's an abstract type, we're putting the
+     annotation in as its layout.  Then we check if the layout is less than the
+     annotation, but that check efficiently uses the annotation from the kind if
+     it's present, so we never look at the manifest.
+
+     1) Fix that.
+     2) Maybe improve the kind's layout to save us round trips later.
+     3) What env should we do this in?  The manifest may refer to mutually
+        recursive types.
+  *)
   List.iter (fun tdecl ->
     let layout =
       Type_layout.of_layout_annotation ~default:Type_layout.any

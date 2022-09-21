@@ -1841,64 +1841,82 @@ let get_unboxed_type_representation env ty =
   (* Do not give too much fuel: PR#7424 *)
   get_unboxed_type_representation env ty 100
 
-let rec constrain_type_layout ~fixed env ty1 layout2 =
-  let rec constrain_type_layout_head ty1 =
-  match (repr ty1).desc with
-  | Tconstr(p1, _, _) ->
-      let layout1 =
-        begin match Env.find_type p1 env with
-        | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
-        | exception Not_found -> Type_layout.any
-        end
-      in Type_layout.sublayout layout1 layout2
+(* When computing a layout, we distinguish two cases because some callers might
+   want to update the layout.
+   - Layout: We compute layout, and the type wasn't a variable.
+   - Var: The type was a var, and this is the layout ref in it. *)
+type layout_result =
+  | Layout of layout
+  | Var of layout ref
+
+(* We assume here that [get_unboxed_type_representation] has already been
+   called, if the type is a Tconstr.  This allows for some optimization by
+   callers (e.g., skip expanding if the kind tells them enough).
+
+   Note that this really returns an upper bound, and in particular returns [Any]
+   in some edge cases (when [get_unboxed_type_representation] ran out of fuel,
+   or when the type is a Tconstr that is missing from the Env *)
+let rec unboxed_type_layout env ty =
+  let open Type_layout in
+  match (repr ty).desc with
+  | Tconstr(p, _, _) -> begin
+      match Env.find_type p env with
+      | { type_kind = k } -> Layout (Type_layout.layout_bound_of_kind k)
+      | exception Not_found -> Layout Type_layout.any
+    end
   | Tvariant row ->
-      let layout1 =
-        let row = Btype.row_repr row in
-        (* if all labels are devoid of arguments, not a pointer *)
-        if
-          not row.row_closed
-          || List.exists
-            (function
-              | _, (Rpresent (Some _) | Reither (false, _, _, _)) -> true
-              | _ -> false)
-            row.row_fields
-        then Sort Value
-        else Immediate
-      in Type_layout.sublayout layout1 layout2
-  | Tvar (_, rlayout1) ->
+      let row = Btype.row_repr row in
+      (* if all labels are devoid of arguments, not a pointer *)
+      if
+        not row.row_closed
+        || List.exists
+          (function
+            | _, (Rpresent (Some _) | Reither (false, _, _, _)) -> true
+            | _ -> false)
+          row.row_fields
+      then Layout value
+      else Layout immediate
+  | Tvar (_, rlayout1) -> Var rlayout1
+  | Tarrow _ -> Layout value
+  | Ttuple _ -> Layout value
+  | Tobject _ -> Layout value
+  | Tfield _ -> Layout value
+  | Tnil -> Layout value
+  | (Tlink _ | Tsubst _) -> assert false
+  | Tunivar (_, layout) -> Layout layout
+  | Tpoly (ty, _) -> unboxed_type_layout env ty
+  | Tpackage _ -> Layout value
+
+let rec constrain_type_layout ~fixed env ty1 layout2 =
+  let constrain_unboxed ty1 =
+    match unboxed_type_layout env ty1 with
+    | Layout layout1 -> Type_layout.sublayout layout1 layout2
+    | Var rlayout1 ->
       if fixed then Type_layout.sublayout !rlayout1 layout2
       else
         (* CJC XXX were we ignoring the result, previously?
-
            Result.map ignore (Type_layout.intersection !rlayout1 layout2) *)
         Result.map (fun layout1 -> rlayout1 := layout1)
           (Type_layout.intersection !rlayout1 layout2)
-  | Tarrow _ -> Type_layout.sublayout Type_layout.value layout2
-  | Ttuple _ -> Type_layout.sublayout Type_layout.value layout2
-  | Tobject _ -> Type_layout.sublayout Type_layout.value layout2
-  | Tfield _ -> Type_layout.sublayout Type_layout.value layout2
-  | Tnil -> Type_layout.sublayout Type_layout.value layout2
-  | (Tlink _ | Tsubst _) -> assert false
-  | Tunivar (_, layout1) -> Type_layout.sublayout layout1 layout2
-  | Tpoly (ty, _) -> constrain_type_layout_head ty
-  | Tpackage _ -> Type_layout.sublayout Type_layout.value layout2
   in
+  (* This is an optimization to avoid calling [get_unboxed_type_representation]
+     if we can tell the constraint is satisfied from the type_kind *)
   match (repr ty1).desc with
   | Tconstr(p, _args, _abbrev) -> begin
       let layout_bound =
         begin match Env.find_type p env with
         | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
-        | exception Not_found -> Any
+        | exception Not_found -> Type_layout.any
         end
       in
       match Type_layout.sublayout layout_bound layout2 with
       | Ok () -> Ok ()
       | Error _ ->
         let ty1 = get_unboxed_type_representation env ty1 in
-        constrain_type_layout_head ty1
+        constrain_unboxed ty1
     end
   | Tpoly (ty, _) -> constrain_type_layout ~fixed env ty layout2
-  | _ -> constrain_type_layout_head ty1
+  | _ -> constrain_unboxed ty1
 
 let check_type_layout env ty layout =
   constrain_type_layout ~fixed:true env ty layout
@@ -1927,6 +1945,31 @@ let constrain_type_layout_exn env ty layout =
   match constrain_type_layout env ty layout with
   | Ok () -> ()
   | Error err -> raise (Unify [Bad_layout (ty,err)])
+
+(* Note: Because [unboxed_type_layout] actually returns an upper bound, this
+   function computes an innaccurate intersection in some cases.
+
+   This is OK because of where it is used, which is related to gadt equations.
+   Basically the question we're trying to answer is not really "is this
+   intersection inhabited" but rather "do we know for sure that this
+   intersection is uninhabited".  It's fine to call the intersection non-empty
+   in some cases where its not (this will happen when pattern matching on a
+   "false" GADT pattern), but not to say the intersection is empty if it isn't.
+*)
+let rec intersect_type_layout env ty1 layout2 =
+  let intersect_unboxed ty1 =
+    match unboxed_type_layout env ty1 with
+    | Layout layout1 -> Type_layout.intersection layout1 layout2
+    | Var rlayout1 -> Type_layout.intersection !rlayout1 layout2
+       (* CJC XXX we never want to update the ref here, right? *)
+  in
+  match (repr ty1).desc with
+  | Tpoly (ty, _) -> intersect_type_layout env ty layout2
+  | _ ->
+    (* [intersect_type_layout] is called rarely, so we don't bother with trying
+       to avoid this call as in [constrain_type_layout] *)
+    let ty1 = get_unboxed_type_representation env ty1 in
+    intersect_unboxed ty1
 
 (* Make sure that the type parameters of the type constructor [ty]
    respect the type constraints *)
@@ -2449,6 +2492,7 @@ let rec mcomp type_pairs env t1 t2 =
   | (Tvar _, _)
   | (_, Tvar _)  ->
       ()
+    (* CR ccasinghino: This could be made more precise based on layouts *)
   | (Tconstr (p1, [], _), Tconstr (p2, [], _)) when Path.same p1 p2 ->
       ()
   | _ ->
@@ -2649,6 +2693,10 @@ let find_expansion_scope env path =
 
 let layout_of_abstract_type_declaration env p =
   try
+    (* This lookup duplicates work already done in is_instantiable, which guards
+       the case of unify3 that reaches this function.  Would be nice to
+       eliminate the duplication, but is seems tricky to do so without
+       complicating unify3. *)
     match (Env.find_type p env).type_kind with
     | Type_abstract {layout} -> layout
     | _ -> assert false
@@ -2656,15 +2704,28 @@ let layout_of_abstract_type_declaration env p =
     Not_found -> assert false
 
 let add_layout_equation env destination layout1 =
-  let layout2 = layout_of_abstract_type_declaration !env destination in
-  match Type_layout.intersection layout1 layout2 with
-  | Error err -> raise (Unify [Bad_layout (newconstr destination [],err)])
-  | Ok layout ->
-    if Type_layout.equal layout layout2 then ()
-    else begin
-      let decl = Env.find_type destination !env in
-      let decl = {decl with type_kind = Type_abstract {layout}} in
-      env := Env.add_local_type destination decl !env
+  (* Here we check whether the source and destination layouts intersect.  If
+     they don't, we can give a type error.  If they do, and destination is
+     abstract, we can improve type checking by assigning destination that
+     layout.  If destination is not abstract, we can't locally improve its
+     layout, so we're slightly incomplete.  *)
+  match intersect_type_layout !env destination layout1 with
+  | Error err -> raise (Unify [Bad_layout (destination,err)])
+  | Ok layout -> begin
+      match destination.desc with
+      | Tconstr (p, _, _) when is_instantiable !env p -> begin
+        try
+          let decl = Env.find_type p !env in
+          match decl.type_kind with
+          | Type_abstract {layout=layout'} when
+              not (Type_layout.equal layout layout') ->
+            let decl = {decl with type_kind = Type_abstract {layout}} in
+            env := Env.add_local_type p decl !env
+          | (Type_record _ | Type_variant _ | Type_open | Type_abstract _) -> ()
+        with
+          Not_found -> ()
+      end
+      | _ -> ()
     end
 
 let add_gadt_equation env source destination =
@@ -2675,20 +2736,11 @@ let add_gadt_equation env source destination =
     let expansion_scope =
       max (Path.scope source) (get_gadt_equations_level ())
     in
-    (* CJC XXX this lookup duplicates work already done in is_instantiable.  Factor out
-       those when clauses instead *)
     (* Layouts: computing the actual layout here is required, not just for
-       effiency.  When we check the layout later, we may not be able to see the
+       efficiency.  When we check the layout later, we may not be able to see the
        local equation because of its level. *)
     let layout = layout_of_abstract_type_declaration !env source in
-    (* CJC : If this is not a tconstr, or the tconstr is not abstract (?), we
-       need to compute the full, exact layout for destination from the desc.
-       That's a little expensive, but this case is rare.  In that case we don't need to add an equation, just to check that the layout is nonempty *)
-    let p_destination = match destination.desc with
-      | Tconstr (p,_,_) -> p
-      | _ -> assert false
-    in
-    add_layout_equation env p_destination layout;
+    add_layout_equation env destination layout;
     let decl = new_declaration expansion_scope (Some destination) layout in
     env := Env.add_local_type source decl !env;
     cleanup_abbrev ()
