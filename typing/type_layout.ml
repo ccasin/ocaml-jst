@@ -63,7 +63,7 @@ let rec sort_to_string = function
 
 let to_string = function
   | Any -> "any"
-  | Sort sort -> "sort " ^ sort_to_string sort
+  | Sort sort -> sort_to_string sort
   | Immediate64 -> "immediate64"
   | Immediate -> "immediate"
 

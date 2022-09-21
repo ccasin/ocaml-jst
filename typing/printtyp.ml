@@ -495,8 +495,9 @@ let rec raw_type ppf ty =
   end
 and raw_type_list tl = raw_list raw_type tl
 and raw_type_desc ppf = function
-    (* XXX CJC TODO print layout in var case *)
-    Tvar (name,_) -> fprintf ppf "Tvar %a" print_name name
+    Tvar (name, layout) ->
+      fprintf ppf "Tvar (@,%a,@,%s)" print_name name
+        (Type_layout.to_string !layout)
   | Tarrow((l,arg,ret),t1,t2,c) ->
       fprintf ppf "@[<hov1>Tarrow((\"%s\",%a,%a),@,%a,@,%a,@,%s)@]"
         (string_of_label l) Alloc_mode.print arg Alloc_mode.print ret
@@ -521,8 +522,9 @@ and raw_type_desc ppf = function
   | Tnil -> fprintf ppf "Tnil"
   | Tlink t -> fprintf ppf "@[<1>Tlink@,%a@]" raw_type t
   | Tsubst t -> fprintf ppf "@[<1>Tsubst@,%a@]" raw_type t
-  (* CJC XXX print layout in univar case *)
-  | Tunivar (name,_) -> fprintf ppf "Tunivar %a" print_name name
+  | Tunivar (name, layout) ->
+      fprintf ppf "Tunivar (@,%a,@,%s)" print_name name
+        (Type_layout.to_string layout)
   | Tpoly (t, tl) ->
       fprintf ppf "@[<hov1>Tpoly(@,%a,@,%a)@]"
         raw_type t
