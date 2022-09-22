@@ -361,51 +361,21 @@ let transl_declaration env sdecl (id, uid) =
       Option.is_none unboxed_attr
     | _ -> false, false (* Not unboxable, mark as boxed *)
   in
-  let layout_annotation =
-    (* CJC XXX: This is a special case for the case of "really" abstract types -
-       those without a kind _or_ a manifest.  We want to default them to value,
-       in the absence of an annotation
-
-       This is wrong - we don't want to pretend they are annotated.
-
-       Really, the right place to do this would be wherever we compare the
-       layout and the manifest.  But I'm not doign that anywhere right now!
-       This needs to be reworked.
-
-       The way it works right now is, if you have an abstract type with a
-       manifest and no layout annotation, we make it a:
-
-         Tabstract {layout = Any}
-
-       So, for example, that's what you get in your type declaration if you
-       write `type t = int` in a signature.  Now, this seems wrong, but it
-       actually works out fine when there is a manifest, because
-       Ctype.constrain_type_layout is going to look at the manifest if the type
-       is abstract.  But, constrain_type_layout doesn't even bother to update
-       the type_kind, so we end up looking at the manifest every time we have to
-       check this type's layout, which is dumb.
-
-       We should, at a minimum, have that function update the layout.  But maybe
-       we should just prepopulate the layout?  Maybe we can't do it here because
-       of recusive types, but surely we could do it when we update the layouts
-       with [update_decls_layout] at the end of [transl_type_decl].  Currently
-       that function only looks at the kind - maybe it can look at the manifest
-       too.  We could also default non-manifest types to value at that time,
-       too.
-    *)
-    match Builtin_attributes.layout sdecl.ptype_attributes with
-    | Some l -> Some l
-    | None ->
-      match sdecl.ptype_manifest with
-      | Some _ -> None
-      | None -> Some Builtin_attributes.Value
-  in
+  let layout_annotation = Builtin_attributes.layout sdecl.ptype_attributes in
   let (tkind, kind) =
     match sdecl.ptype_kind with
       | Ptype_abstract ->
         let layout =
-          Type_layout.of_layout_annotation ~default:Type_layout.any
-            layout_annotation
+          (* If there's no annotation and no manifest, we just default to value
+             here. We could conceivably, in the future, try to learn something
+             from the uses of the type (particularly in a group of mutually
+             recursive types). *)
+          let default =
+            if Option.is_some sdecl.ptype_manifest
+            then Type_layout.any
+            else Type_layout.value
+          in
+          Type_layout.of_layout_annotation ~default layout_annotation
         in
         Ttype_abstract, Type_abstract {layout}
       | Ptype_variant scstrs ->
@@ -1133,16 +1103,9 @@ let transl_type_decl env rec_flag sdecl_list =
       ) tdecls decls
   in
   (* Check layout annotations *)
-  (* CJC XXX this is wrong.  If it's an abstract type, we're putting the
-     annotation in as its layout.  Then we check if the layout is less than the
-     annotation, but that check efficiently uses the annotation from the kind if
-     it's present, so we never look at the manifest.
-
-     1) Fix that.
-     2) Maybe improve the kind's layout to save us round trips later.
-     3) What env should we do this in?  The manifest may refer to mutually
-        recursive types.
-  *)
+  (* CJC XXX.  Abstract types with manifests and no annotation are currently
+     getting layout "any" in the type kind.  Not a bug, exactly, but ugly.
+     Improve it here or in check_coherence. *)
   List.iter (fun tdecl ->
     let layout =
       Type_layout.of_layout_annotation ~default:Type_layout.any
