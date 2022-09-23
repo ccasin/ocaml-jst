@@ -26,6 +26,8 @@ module String = Misc.Stdlib.String
 
 type native_repr_kind = Unboxed | Untagged
 
+type layout_loc = Fun_arg | Fun_ret | Tuple | Field
+
 type error =
     Repeated_parameter
   | Duplicate_constructor of string
@@ -61,6 +63,8 @@ type error =
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
   | Layout of Type_layout.Violation.t
+  | Layout_value of
+      {lloc : layout_loc; typ : type_expr; err : Type_layout.Violation.t}
   | Separability of Typedecl_separability.error
   | Bad_unboxed_attribute of string
   | Boxed_and_unboxed
@@ -100,17 +104,43 @@ let enter_type rec_flag env sdecl (id, uid) =
     | Asttypes.Recursive -> true
   in
   let arity = List.length sdecl.ptype_params in
+
+  (* There is some trickiness going on here with the layout.  It relies and
+     expands on an old trick used in the manifest of the below decl.
+
+     Consider a declaration like:
+
+        type t = foo -> int
+        and foo = Bar
+
+     When [enter_type] is called, we haven't yet analyzed anything about the
+     manifests and kinds of the declarations, so it's natural to give them
+     layout Any.  But, while translating [t]'s manifest, we'll need to know
+     [foo] has layout value, because it is used as a function argument.  And
+     this check will occur before we've looked at [foo] at all.
+
+     One can imagine solutions, like estimating the layout based on the kind
+     (tricky for unboxed) or parameterizing the type_expr translation with an
+     option to not do full layout checking in some cases and fix it up later
+     (ugly).
+
+     Instead, we (CJC XXX explain the pre-existing manifest type var trick, how
+     it solves to solve the problem of allowing:
+
+       type 'a t = 'a constraint 'a = ('b * 'c)
+
+       type s = r t
+       and r = int * string
+
+     while rejecting
+
+       ...
+       and r = int list
+
+     And how we now do it even if there's not manifest, which solves the layout
+     problem) *)
   let layout =
-    (* CJC XXX : Defaulting to value here - maybe we want to do some
-       approximating instead.  This comes up in a mutually defined type group,
-       e.g.,:
-
-       type t = foo -> int
-       and foo = Bar
-
-       To check t, we need to know foo's layout is value (so it can be used as a
-       function argument).  (recursive_types.ml in test suite) *)
-    Type_layout.of_layout_annotation ~default:Type_layout.value
+    Type_layout.of_layout_annotation ~default:Type_layout.any
       (Builtin_attributes.layout sdecl.ptype_attributes)
   in
   if not needed then env else
@@ -129,9 +159,7 @@ let enter_type rec_flag env sdecl (id, uid) =
       type_arity = arity;
       type_kind = Types.kind_abstract ~layout;
       type_private = sdecl.ptype_private;
-      type_manifest =
-        begin match sdecl.ptype_manifest with None -> None
-        | Some _ -> Some (Ctype.newvar Type_layout.any) end;
+      type_manifest = Some (Ctype.newvar Type_layout.any);
       type_variance = Variance.unknown_signature ~injective:false ~arity;
       type_separability = Types.Separability.default_signature ~arity;
       type_is_newtype = false;
@@ -524,6 +552,11 @@ module TypeSet = Btype.TypeSet
 module TypeMap = Btype.TypeMap
 
 let rec check_constraints_rec env loc visited ty =
+  let check_layout_value ~loc ~layout_loc typ =
+    match Ctype.constrain_type_layout env ty Type_layout.value with
+    | Ok () -> ()
+    | Error err -> raise(Error(loc, Layout_value {lloc=layout_loc; typ; err}))
+  in
   let ty = Ctype.repr ty in
   if TypeSet.mem ty !visited then () else begin
   visited := TypeSet.add ty !visited;
@@ -541,6 +574,17 @@ let rec check_constraints_rec env loc visited ty =
   | Tpoly (ty, tl) ->
       let _, ty = Ctype.instance_poly false tl ty in
       check_constraints_rec env loc visited ty
+  | Tarrow (_, ty1, ty2, _) ->
+      check_layout_value ~layout_loc:Fun_arg ~loc ty1;
+      check_layout_value ~layout_loc:Fun_ret ~loc ty2;
+      List.iter (check_constraints_rec env loc visited) [ty1;ty2]
+  | Ttuple tys ->
+      List.iter (check_layout_value ~loc ~layout_loc:Tuple) tys;
+      List.iter (check_constraints_rec env loc visited) tys
+  | Tfield (_,_,ty,tys) ->
+      check_layout_value ~loc ~layout_loc:Field ty;
+      check_constraints_rec env loc visited tys
+  (* CJC XXX do something for package *)
   | _ ->
       Btype.iter_type_expr (check_constraints_rec env loc visited) ty
   end
@@ -664,6 +708,8 @@ let check_abbrev env sdecl (id, decl) =
   check_coherence env sdecl.ptype_loc (Path.Pident id) decl
 
 (* This currently does two things:
+
+   (CJC XXX: use newenv, but default all decls first)
 
    1) It eliminates any remaining sort variables from type parameters, defaulting to
    value.  Currently, our approach is that if the user hasn't explicitly annotated a type
@@ -1111,7 +1157,7 @@ let transl_type_decl env rec_flag sdecl_list =
       Type_layout.of_layout_annotation ~default:Type_layout.any
         tdecl.typ_layout_annotation
     in
-    match Ctype.check_decl_layout env tdecl.typ_type layout with
+    match Ctype.check_decl_layout final_env tdecl.typ_type layout with
     | Ok () -> ()
     | Error v -> raise(Error(tdecl.typ_loc, Layout v)))
     tdecls;
@@ -2027,6 +2073,17 @@ let report_error ppf = function
          it should not occur deeply into its type.@]"
         (match kind with Unboxed -> "@unboxed" | Untagged -> "@untagged")
   | Layout v -> Type_layout.Violation.report_with_name ~name:"This type" ppf v
+  | Layout_value {lloc; typ; err} ->
+    let s =
+      match lloc with
+      | Fun_arg -> "Function argument"
+      | Fun_ret -> "Function return"
+      | Tuple -> "Tuple element"
+      | Field -> "Field"
+    in
+    fprintf ppf "@[%s types must have layout value.@ \ %a@]" s
+      (Type_layout.Violation.report_with_offender
+         ~offender:(fun ppf -> Printtyp.type_expr ppf typ)) err
   | Bad_unboxed_attribute msg ->
       fprintf ppf "@[This type cannot be unboxed because@ %s.@]" msg
   | Separability (Typedecl_separability.Non_separable_evar evar) ->

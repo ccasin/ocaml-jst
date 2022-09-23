@@ -2893,6 +2893,7 @@ let rec unify (env:Env.t ref) t1 t2 =
         unify_univar t1 t2 !univar_pairs;
         update_level !env t1.level t2;
         update_scope t1.scope t2;
+        (* CJC XXX check equality of layouts *)
         link_type t1 t2
     | (Tconstr (p1, [], a1), Tconstr (p2, [], a2))
           when Path.same p1 p2 (* && actual_mode !env = Old *)
@@ -3433,12 +3434,13 @@ let unify_var env t1 t2 =
   match t1.desc, t2.desc with
     Tvar _, Tconstr _ when deep_occur t1 t2 ->
       unify (ref env) t1 t2
-  | Tvar _, _ ->
+  | Tvar (_,layout), _ ->
       let reset_tracing = check_trace_gadt_instances env in
       begin try
         occur env t1 t2;
         update_level env t1.level t2;
         update_scope t1.scope t2;
+        constrain_type_layout_exn env t2 !layout;
         link_type t1 t2;
         reset_trace_gadt_instances reset_tracing;
       with Unify trace ->
@@ -3480,7 +3482,9 @@ let filter_arrow env t l =
   match t.desc with
     Tvar _ ->
       let lv = t.level in
-      let t1 = newvar2 lv Type_layout.any and t2 = newvar2 lv Type_layout.any in
+      (* CR ccasinghino: t1 can probably be sort 'a and t2 any *)
+      let t1 = newvar2 lv Type_layout.value in
+      let t2 = newvar2 lv Type_layout.value in
       let marg = Btype.Alloc_mode.newvar () in
       let mret = Btype.Alloc_mode.newvar () in
       let t' = newty2 lv (Tarrow ((l,marg,mret), t1, t2, Cok)) in

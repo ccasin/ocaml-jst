@@ -260,7 +260,7 @@ and transl_type_aux env policy mode styp =
           let ret_mode = Alloc_mode.of_const ret_mode in
           (* Layouts: For now, we require function arguments and returns to have
              layout value. *)
-          (* CJC XXX is this the right place to do that? *)
+          (* CJC XXX is this the right place to do that?  remove these error types if not *)
           begin match
             constrain_type_layout env arg_ty Type_layout.value,
             constrain_type_layout env ret_cty.ctyp_type Type_layout.value
