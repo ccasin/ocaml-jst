@@ -110,14 +110,46 @@ type s4 = string t4
 and 'a t4
 |}];;
 
+(* Test 4: You can touch a void, but not return it directly *)
+type 'a [@void] bar = Bar  of 'a
 
-(* CJC XXX bug.  This is caused by the choice of "value" in the Ptyp_var case of transl_type_aux. *)
-type 'a [@void] baz = 'a;;
+type 'a [@any] baz = Baz of 'a
+
+let f : 'a bar -> 'a baz = function
+    Bar x -> Baz x;;
 
 [%%expect{|
-Line 1, characters 22-24:
-1 | type 'a [@void] baz = 'a;;
-                          ^^
-Error: This type 'a should be an instance of type 'a0
-       'a has layout void, which does not overlap with value.
+type 'a bar = Bar of 'a
+type 'a baz = Baz of 'a
+val f : 'a bar -> 'a baz = <fun>
+|}];;
+
+let g (x : 'a bar) =
+  match x with
+  | Bar x -> x;;
+[%%expect{|
+Line 3, characters 13-14:
+3 |   | Bar x -> x;;
+                 ^
+Error: This expression has type 'a but an expression was expected of type 'a0
+       'a has layout value, which does not overlap with void.
+|}, Principal{|
+Lines 2-3, characters 2-14:
+2 | ..match x with
+3 |   | Bar x -> x..
+Error: This expression has type 'a but an expression was expected of type 'a0
+       'a has layout value, which does not overlap with void.
 |}]
+(* CJC XXX understand what's going on with Principal mode here (and improve
+   error messages generally *)
+
+(* let g : 'a baz -> 'a bar = function
+ *   Baz x -> Bar x
+ * ;;
+
+[%%expect{|
+type 'a baz = 'a
+|}]
+
+*)
+

@@ -707,39 +707,47 @@ let check_coherence env loc dpath decl =
 let check_abbrev env sdecl (id, decl) =
   check_coherence env sdecl.ptype_loc (Path.Pident id) decl
 
-(* This currently does two things:
+(* This eliminates remaining sort variables from type parameters, defaulting to
+   value.
 
-   (CJC XXX: use newenv, but default all decls first)
+   Currently our approach is that if the user hasn't explicitly annotated a type
+   parameter with a layout, it is given a sort variable.  We may discover this
+   is something more specific while checking the type and other types in the
+   mutually defined group.  If not, we default to value.
 
-   1) It eliminates any remaining sort variables from type parameters, defaulting to
-   value.  Currently, our approach is that if the user hasn't explicitly annotated a type
-   parameter 'a it is given a sort variable.  We may discover this is something more
-   specific by checking how the type is used by other types in the same collection of
-   mutually recursive type declarations.
+   A consequence of this approach is that if you want "any", you have to ask for
+   it.  e.g., in [type 'a foo = Bar], ['a] will get layout [value], but it could
+   be given any.  For that, you need [type ('a : any) foo = Bar].
 
-   2) It infers more precise layouts in the type kind, including which fields of
+   It's important to do this defaulting before things like the separability
+   check or update_decl_layout, because those test whether certain types are
+   void or immediate, and if there were sort variables still around that would
+   have effects!
+
+   CJC XXX: In the future, should apply to existentials too, but I'm not doing that now.
+*)
+let default_decl_layout {type_params} =
+  let default_ty {desc} =
+    match desc with
+    | Tvar (_,{contents=Sort (Var s)}) -> begin
+        match !s with
+        | None -> s := Some Types.Value
+        | _ -> ()
+      end
+    | _ -> ()
+  in
+  List.iter default_ty type_params
+
+let default_decls_layout decls =
+  List.iter (fun (_, decl) -> default_decl_layout decl) decls
+
+(* (CJC XXX: use newenv, but default all decls first)
+
+   This infers more precise layouts in the type kind, including which fields of
    a record are void.  This would be hard to do during [transl_declaration] due
    to mutually recursive types.
-
-   It is important to do 1 before 2, because otherwise when we check whether things are
-   void we'll actually be making them void.
-
-   CJC XXX: In the future, 1 should apply to existentials too, but I'm not doing that now.
  *)
 let update_decl_layout env decl =
-  let default_params {type_params} =
-    let default_ty {desc} =
-      match desc with
-      | Tvar (_,{contents=Sort (Var s)}) -> begin
-          match !s with
-          | None -> s := Some Types.Value
-          | _ -> ()
-        end
-      | _ -> ()
-    in
-    List.iter default_ty type_params
-  in
-
   let update_label_voids lbls =
     let lbls, imm =
       List.fold_left (fun (lbls, all_void) lbl ->
@@ -771,7 +779,6 @@ let update_decl_layout env decl =
     in
     (List.rev cstrs, imm)
   in
-  default_params decl;
   match decl.type_kind with
   | Type_abstract _ | Type_open -> decl
   | Type_record (lbls, rep) ->
@@ -1122,6 +1129,8 @@ let transl_type_decl env rec_flag sdecl_list =
     sdecl_list tdecls;
   (* Check that constraints are enforced *)
   List.iter2 (check_constraints new_env) sdecl_list decls;
+  (* Default away sort variables *)
+  default_decls_layout decls;
   (* Add type properties to declarations *)
   (* CR ccasinghino: maybe improve immediacy values *)
   let decls =

@@ -226,11 +226,8 @@ and transl_type_aux env policy mode styp =
       with Not_found ->
         let v =
           (* CJC XXX same question about policy *)
-          (* CJC I think value is wrong here.  I think we want to pick Any and then get
-             unified with something (and that this comes up with gadts).  See the failure
-             we get if you put any here in variants5.ml *)
-          if policy = Univars then new_pre_univar ~name Type_layout.value
-          else newvar ~name Type_layout.value
+          if policy = Univars then new_pre_univar ~name Type_layout.any
+          else newvar ~name Type_layout.any
         in
         used_variables := TyVarMap.add name (v, styp.ptyp_loc) !used_variables;
         v
