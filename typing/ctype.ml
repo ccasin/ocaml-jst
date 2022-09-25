@@ -3441,6 +3441,7 @@ let unify_var env t1 t2 =
         update_level env t1.level t2;
         update_scope t1.scope t2;
         constrain_type_layout_exn env t2 !layout;
+        (* CJC XXX make an example that goes wrong if I delete this *)
         link_type t1 t2;
         reset_trace_gadt_instances reset_tracing;
       with Unify trace ->
