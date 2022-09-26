@@ -73,6 +73,26 @@ Error: This type string should be an instance of type 'a
        string has layout value, which is not a sublayout of immediate.
 |}];;
 
+let id_for_imms (x : 'a imm_id) = x
+
+let three = id_for_imms 3
+let true_ = id_for_imms true;;
+[%%expect{|
+val id_for_imms : 'a imm_id -> 'a imm_id = <fun>
+val three : int imm_id = 3
+val true_ : bool imm_id = true
+|}]
+
+let not_helloworld = id_for_imms "hello world";;
+[%%expect{|
+Line 1, characters 33-46:
+1 | let not_helloworld = id_for_imms "hello world";;
+                                     ^^^^^^^^^^^^^
+Error: This expression has type string but an expression was expected of type
+         'a imm_id = 'a
+       string has layout value, which is not a sublayout of immediate.
+|}]
+
 (* Test 4: parameters and recursion *)
 type 'a [@immediate] t4
 and s4 = string t4;;
@@ -94,6 +114,37 @@ Line 1, characters 10-16:
               ^^^^^^
 Error: This type string should be an instance of type 'a
        string has layout value, which is not a sublayout of immediate.
+|}]
+
+type s4 = int t4
+and 'a [@immediate] t4;;
+
+[%%expect{|
+type s4 = int t4
+and 'a t4
+|}]
+
+type s4 = s5 t4
+and 'a [@immediate] t4
+and s5 = int;;
+
+[%%expect{|
+type s4 = s5 t4
+and 'a t4
+and s5 = int
+|}]
+
+type s4 = s5 t4
+and 'a [@immediate] t4
+and s5 = string;;
+
+[%%expect{|
+Line 3, characters 0-15:
+3 | and s5 = string;;
+    ^^^^^^^^^^^^^^^
+Error: This type constructor expands to type s5 = string
+       but is used here with type 'a
+       s5 has layout value, which is not a sublayout of immediate.
 |}]
 
 type 'a [@any] t4 = 'a
