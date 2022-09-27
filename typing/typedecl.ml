@@ -1099,6 +1099,8 @@ let transl_type_decl env rec_flag sdecl_list =
         (fun (id, _) sdecl -> update_type temp_env new_env id sdecl.ptype_loc)
         ids_list sdecl_list
   end;
+  (* Default away sort variables *)
+  default_decls_layout decls;
   (* Generalize type declarations. *)
   Ctype.end_def();
   List.iter (fun (_, decl) -> generalize_decl decl) decls;
@@ -1129,8 +1131,6 @@ let transl_type_decl env rec_flag sdecl_list =
     sdecl_list tdecls;
   (* Check that constraints are enforced *)
   List.iter2 (check_constraints new_env) sdecl_list decls;
-  (* Default away sort variables *)
-  default_decls_layout decls;
   (* Add type properties to declarations *)
   (* CR ccasinghino: maybe improve immediacy values *)
   let decls =
