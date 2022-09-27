@@ -26,8 +26,8 @@ let scrape_ty env ty =
   match ty.desc with
   | Tconstr (p, _, _) ->
       begin match Env.find_type p env with
-      | {type_kind = ( Type_variant (_, Variant_unboxed)
-                     | Type_record (_, Record_unboxed _) ); _} ->
+      | {type_kind = ( Type_variant (_, Variant_unboxed _)
+                     | Type_record (_, Record_unboxed (_,_)) ); _} ->
         Ctype.get_unboxed_type_representation env ty
       | _ -> ty
       | exception Not_found -> ty
@@ -191,7 +191,7 @@ let value_kind env ty =
         | Type_variant (constructors, rep) -> begin
           match rep with
           | Variant_immediate -> (num_nodes_visited, Value Pintval)
-          | (Variant_regular | Variant_unboxed) ->
+          | (Variant_regular | Variant_unboxed _) ->
             let depth = depth + 1 in
             let for_one_constructor
                   (constructor : Types.constructor_declaration)

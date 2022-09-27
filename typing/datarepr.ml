@@ -112,7 +112,7 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
         in
         let (tag, descr_rem) =
           match rep with
-          | Variant_unboxed ->
+          | Variant_unboxed _ ->
             assert (rem = []);
             (Cstr_unboxed, [])
           | Variant_immediate ->
@@ -130,7 +130,7 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
         let existentials, cstr_args, cstr_inlined =
           let representation =
             match rep with
-            | Variant_unboxed -> Record_unboxed true
+            | Variant_unboxed l -> Record_unboxed (true,l)
             | Variant_regular -> Record_inlined idx_nonconst
             | Variant_immediate -> Record_immediate true
           in

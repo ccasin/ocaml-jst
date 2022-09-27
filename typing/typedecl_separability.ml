@@ -73,7 +73,7 @@ let unboxed_of_record_repr = function
 
 let unboxed_of_variant_repr = function
   | Variant_regular | Variant_immediate -> Boxed
-  | Variant_unboxed -> Unboxed
+  | Variant_unboxed _ -> Unboxed
 
 let not_void_type env ty =
   Result.is_error (Ctype.check_type_layout env ty Type_layout.void)

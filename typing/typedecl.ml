@@ -459,7 +459,14 @@ let transl_declaration env sdecl (id, uid) =
             | _ -> false
         in
         let rep =
-          if unbox then Variant_unboxed
+          (* CJC XXX we could, here, look at the manifest for a more accurate
+             bound *)
+          if unbox then
+            let layout =
+              Type_layout.of_layout_annotation ~default:Type_layout.any
+                layout_annotation
+            in
+            Variant_unboxed layout
           else if List.for_all is_constant cstrs then Variant_immediate
           else Variant_regular
         in
@@ -467,7 +474,14 @@ let transl_declaration env sdecl (id, uid) =
       | Ptype_record lbls ->
           let lbls, lbls' = transl_labels env true lbls in
           let rep =
-            if unbox then Record_unboxed false
+            (* CJC XXX we could, here, look at the manifest for a more accurate
+               bound *)
+            if unbox then
+              let layout =
+                Type_layout.of_layout_annotation ~default:Type_layout.any
+                  layout_annotation
+              in
+              Record_unboxed (false, layout)
             else if List.for_all (fun l -> is_float env l.Types.ld_type) lbls'
             then Record_float
             else Record_regular
@@ -785,7 +799,7 @@ let update_decl_layout env decl =
       let lbls, imm = update_label_voids lbls in
       let rep =
         match imm, rep with
-        | _, (Record_unboxed _ | Record_float) -> rep
+        | _, (Record_unboxed (_,_) | Record_float) -> rep
         | _, (Record_inlined _ | Record_extension _) -> assert false
         | true, (Record_regular | Record_immediate _) -> Record_immediate false
         | false, (Record_regular | Record_immediate _) -> rep
@@ -795,7 +809,7 @@ let update_decl_layout env decl =
       let cstrs, imm = update_cstr_voids cstrs in
       let rep =
         match imm, rep with
-        | _, Variant_unboxed -> rep
+        | _, Variant_unboxed _ -> rep
         | true, (Variant_regular | Variant_immediate) -> Variant_immediate
         | false, (Variant_regular | Variant_immediate) -> rep
       in

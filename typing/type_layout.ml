@@ -120,14 +120,14 @@ let void = Sort Void
 let layout_bound_of_record_representation = function
   | Record_regular -> value
   | Record_float -> value
-  | Record_unboxed _ -> any
+  | Record_unboxed (_,l) -> l
   | Record_inlined _ -> value
   | Record_extension _ -> value
   | Record_immediate _ -> immediate
 
 let layout_bound_of_variant_representation = function
     Variant_regular -> value
-  | Variant_unboxed -> any
+  | Variant_unboxed t -> t
   | Variant_immediate -> immediate
 
 let layout_bound_of_kind = function

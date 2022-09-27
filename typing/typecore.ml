@@ -1136,8 +1136,8 @@ module Label = NameChoice (struct
   let in_env lbl =
     match lbl.lbl_repres with
     | Record_regular | Record_float
-    | Record_unboxed false | Record_immediate false -> true
-    | Record_unboxed true | Record_immediate true
+    | Record_unboxed (false,_) | Record_immediate false -> true
+    | Record_unboxed (true,_) | Record_immediate true
     | Record_inlined _ | Record_extension _ -> false
 end)
 

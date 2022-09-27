@@ -1306,10 +1306,15 @@ let rec tree_of_type_decl id decl =
             olayout_of_layout lay
         end
     | Type_variant (cstrs, rep) ->
+        let unboxed, lay =
+          match rep with
+          | Variant_unboxed l -> true, olayout_of_layout l
+          | Variant_regular | Variant_immediate -> false, Olay_any
+        in
         tree_of_manifest (Otyp_sum (List.map tree_of_constructor cstrs)),
         decl.type_private,
-        (rep = Variant_unboxed),
-        Olay_any
+        unboxed,
+        lay
     | Type_record(lbls, rep) ->
         tree_of_manifest (Otyp_record (List.map tree_of_label lbls)),
         decl.type_private,

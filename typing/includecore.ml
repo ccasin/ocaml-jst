@@ -419,13 +419,17 @@ and compare_variants_with_representation ~loc env params1 params2 n
   let err = compare_variants ~loc env params1 params2 n cstrs1 cstrs2 in
   match err, rep1, rep2 with
   | None, Variant_regular, Variant_regular
-  | None, Variant_unboxed, Variant_unboxed
   | None, Variant_immediate, Variant_immediate -> None
+  | None, Variant_unboxed l1, Variant_unboxed l2 -> begin
+    match Type_layout.sublayout l1 l2 with
+    | Ok () -> None
+    | Error e -> Some (Layout e)
+  end
   | Some err, _, _ ->
      Some (Variant_mismatch err)
-  | None, Variant_unboxed, Variant_regular ->
+  | None, Variant_unboxed _, Variant_regular ->
      Some (Unboxed_representation First)
-  | None, Variant_regular, Variant_unboxed ->
+  | None, Variant_regular, Variant_unboxed _ ->
      Some (Unboxed_representation Second)
   | _ -> Some (Unboxed_representation First) (* CJC XXX todo generalize error *)
 

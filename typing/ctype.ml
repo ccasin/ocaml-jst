@@ -1853,9 +1853,9 @@ let get_unboxed_type_representation env ty =
       | exception Not_found -> ty
       | {type_params; type_kind =
            Type_record ([{ld_type = ty2; _}], Record_unboxed _)
-         | Type_variant ([{cd_args = Cstr_tuple [ty2]; _}], Variant_unboxed)
+         | Type_variant ([{cd_args = Cstr_tuple [ty2]; _}], Variant_unboxed _)
          | Type_variant ([{cd_args = Cstr_record [{ld_type = ty2; _}]; _}],
-                         Variant_unboxed)}
+                         Variant_unboxed _)}
         -> begin
           let ty2 = match ty2.desc with Tpoly (t, _) -> t | _ -> ty2 in
           fuel := !fuel - 1;
@@ -1956,10 +1956,11 @@ let constrain_type_layout env ty layout =
 
 let check_decl_layout env decl layout =
   match decl with
-  | { type_kind = ( Type_variant ([{cd_args = Cstr_tuple [arg]; _}], Variant_unboxed)
-                  | Type_variant ([{cd_args = Cstr_record [{ld_type=arg; _}]; _}],
-                                  Variant_unboxed)
-                  | Type_record ([{ld_type=arg; _}], Record_unboxed _)); _ } ->
+  | { type_kind =
+        ( Type_variant ([{cd_args = Cstr_tuple [arg]; _}], Variant_unboxed _)
+        | Type_variant ([{cd_args = Cstr_record [{ld_type=arg; _}]; _}],
+                        Variant_unboxed _)
+        | Type_record ([{ld_type=arg; _}], Record_unboxed _)); _ } ->
      check_type_layout env arg layout
   | { type_kind; type_manifest ; _ } ->
       match Type_layout.sublayout

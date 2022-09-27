@@ -408,7 +408,8 @@ and type_kind =
 and record_representation =
     Record_regular                      (* All fields are boxed / tagged *)
   | Record_float                        (* All fields are floats *)
-  | Record_unboxed of bool    (* Unboxed single-field record, inlined or not *)
+  | Record_unboxed of bool*layout
+      (* Unboxed single-field record, inlined or not *)
   | Record_inlined of int               (* Inlined record *)
   | Record_extension of Path.t          (* Inlined record under extension *)
   | Record_immediate of bool   (* inlined or not *)
@@ -419,9 +420,9 @@ and global_flag =
   | Unrestricted
 
 and variant_representation =
-    Variant_regular          (* Constant or boxed constructors *)
-  | Variant_unboxed          (* One unboxed single-field constructor *)
-  | Variant_immediate        (* Variants with all constant constructors *)
+    Variant_regular           (* Constant or boxed constructors *)
+  | Variant_unboxed of layout (* One unboxed single-field constructor *)
+  | Variant_immediate         (* Variants with all constant constructors *)
 
 and label_declaration =
   {
