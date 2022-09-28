@@ -162,45 +162,62 @@ and 'a t4
 |}];;
 
 (* Test 4: You can touch a void, but not return it directly *)
-type 'a [@void] bar = Bar  of 'a
+type 'a [@void] void4 = Void4  of 'a
 
-type 'a [@any] baz = Baz of 'a
+type 'a [@any] any4 = Any4 of 'a
 
-let f : 'a bar -> 'a baz = function
-    Bar x -> Baz x;;
+  (* f4 and g4 here are allowed, but you can only use them on voids *)
+let f4 : 'a void4 -> 'a any4 = function
+    Void4 x -> Any4 x
+
+let g4 : 'a any4 -> 'a void4 = function
+  Any4 x -> Void4 x
+;;
 
 [%%expect{|
-type 'a bar = Bar of 'a
-type 'a baz = Baz of 'a
-val f : 'a bar -> 'a baz = <fun>
+type 'a void4 = Void4 of 'a
+type 'a any4 = Any4 of 'a
+val f4 : 'a void4 -> 'a any4 = <fun>
+val g4 : 'a any4 -> 'a void4 = <fun>
 |}];;
 
-let g (x : 'a bar) =
-  match x with
-  | Bar x -> x;;
+
+  (* disallowed attempts to use f4 and g4 on non-voids *)
+let h4 (x : int void4) = f4 x
 [%%expect{|
-Line 3, characters 13-14:
-3 |   | Bar x -> x;;
-                 ^
+Line 1, characters 12-15:
+1 | let h4 (x : int void4) = f4 x
+                ^^^
+Error: This type int should be an instance of type 'a
+       int has layout immediate, which is not a sublayout of void.
+|}];;
+
+let h4' (x : int any4) = g4 x
+[%%expect{|
+Line 1, characters 28-29:
+1 | let h4' (x : int any4) = g4 x
+                                ^
+Error: This expression has type int any4
+       but an expression was expected of type 'a any4
+       int has layout immediate, which is not a sublayout of void.
+|}];;
+
+  (* disallowed - tries to return void *)
+let g (x : 'a void4) =
+  match x with
+  | Void4 x -> x;;
+[%%expect{|
+Line 3, characters 15-16:
+3 |   | Void4 x -> x;;
+                   ^
 Error: This expression has type 'a but an expression was expected of type 'a0
        'a has layout value, which does not overlap with void.
 |}, Principal{|
-Lines 2-3, characters 2-14:
+Lines 2-3, characters 2-16:
 2 | ..match x with
-3 |   | Bar x -> x..
+3 |   | Void4 x -> x..
 Error: This expression has type 'a but an expression was expected of type 'a0
        'a has layout value, which does not overlap with void.
 |}]
 (* CJC XXX understand what's going on with Principal mode here (and improve
    error messages generally *)
-
-(* let g : 'a baz -> 'a bar = function
- *   Baz x -> Bar x
- * ;;
-
-[%%expect{|
-type 'a baz = 'a
-|}]
-
-*)
-

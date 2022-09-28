@@ -5556,10 +5556,11 @@ and type_construct env (expected_mode : expected_mode) loc lid sarg
   let argument_mode =
     match constr.cstr_tag with
     | Cstr_unboxed -> expected_mode
-    | Cstr_constant _ ->
-       assert (sargs = []);
-       expected_mode
-    | Cstr_block _ | Cstr_extension _ ->
+    (* CJC XXX In the Cstr_constant case, sargs used to always be empty, but now
+       may not be because the constructor may have a argument with layout void.
+       Is doing the same thing as we do in the block and extension cases overly
+       restrictive? *)
+    | Cstr_constant _ | Cstr_block _ | Cstr_extension _ ->
        register_allocation expected_mode;
        mode_subcomponent expected_mode
   in
