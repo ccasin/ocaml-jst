@@ -756,12 +756,12 @@ let is_ident = function
 
 let is_ext cda =
   match cda.cda_description with
-  | {cstr_tag = Cstr_extension _} -> true
+  | {cstr_tag = Extension _} -> true
   | _ -> false
 
 let is_local_ext cda =
   match cda.cda_description with
-  | {cstr_tag = Cstr_extension(p, _)} -> is_ident p
+  | {cstr_tag = Extension (p,_)} -> is_ident p
   | _ -> false
 
 let diff env1 env2 =
@@ -1190,7 +1190,7 @@ let find_type_data path env =
       | decl ->
           {
             tda_declaration = decl;
-            tda_descriptions = Type_abstract {immediate = Unknown};
+            tda_descriptions = kind_abstract_any;
             tda_shape = Shape.leaf decl.type_uid;
           }
       | exception Not_found -> find_type_full p env
@@ -2079,7 +2079,7 @@ and store_type_infos ~tda_shape id info env =
   let tda =
     {
       tda_declaration = info;
-      tda_descriptions = Type_abstract {immediate=Unknown};
+      tda_descriptions = kind_abstract_any;
       tda_shape
     }
   in

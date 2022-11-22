@@ -93,6 +93,12 @@ type ('a, 'variety) elt =
   | Incompatible_fields : { name:string; diff: type_expr diff } -> ('a, _) elt
   (* Unification & Moregen; included in Equality for simplicity *)
   | Rec_occur : type_expr * type_expr -> ('a, _) elt
+  | Bad_layout : type_expr * Type_layout.Violation.t -> ('a, unification) elt
+  | Bad_layout_sort :
+      type_expr * Type_layout.Violation.t -> ('a, unification) elt
+  | Unequal_univar_layouts :
+      type_expr * Type_layout.t * type_expr * Type_layout.t ->
+      ('a, unification) elt
 
 type ('a, 'variety) t = ('a, 'variety) elt list
 
