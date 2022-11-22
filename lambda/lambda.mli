@@ -200,6 +200,9 @@ and float_comparison =
 and array_kind =
     Pgenarray | Paddrarray | Pintarray | Pfloatarray
 
+(* We sometimes use [Pintval] for voids in lambda terms, but only in places the
+   control flow will never actually reach - see the comment on
+   [value_kind_if_not_void] in translcore. *)
 and value_kind =
     Pgenval | Pfloatval | Pboxedintval of boxed_integer | Pintval
   | Pvariant of {
@@ -211,6 +214,8 @@ and value_kind =
     }
   | Parrayval of array_kind
 
+(* Because we compile away void in the translation to lambda, we don't need a
+   constructor for it here. *)
 and layout =
   | Pvalue of value_kind
 
