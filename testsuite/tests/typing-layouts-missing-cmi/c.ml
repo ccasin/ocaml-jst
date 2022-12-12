@@ -1,6 +1,6 @@
 (* TEST
 
-files = "a.ml b.ml"
+readonly_files = "a.ml b.ml"
 * setup-ocamlc.byte-build-env
 ** ocamlc.byte
 module = "a.ml"

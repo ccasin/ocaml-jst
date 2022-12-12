@@ -1023,9 +1023,9 @@ type ('a1, 'b1) ty1 = 'a1 -> unit
 and  ('a2, 'b2) ty2 = 'b2 -> unit
   constraint 'b2 = [> `V2 of ('a2, 'b2) ty1 as 'a2] [@@value];;
 [%%expect {|
-Line 1, characters 0-83:
-1 | type ('a1, 'b1) ty1 = 'a1 -> unit constraint 'a1 = [> `V1 of ('a1, 'b1) ty2 as 'b1] [@@value]
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Lines 1-2, characters 0-61:
+1 | type ('a1, 'b1) ty1 = 'a1 -> unit
+2 |   constraint 'a1 = [> `V1 of ('a1, 'b1) ty2 as 'b1] [@@value]
 Error: The definition of ty1 contains a cycle:
        [> `V1 of ('a, 'b) ty2 as 'b ] as 'a
 |}];;

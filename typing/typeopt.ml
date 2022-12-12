@@ -247,6 +247,12 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
       num_nodes_visited,
       Pvariant { consts = []; non_consts = [0, List.rev fields] }
     end
+  | Tvariant _ ->
+    (* CJC XXX this was missing - only caught in 4.14 merge.  Am I missing other
+       cases. *)
+    num_nodes_visited,
+    if Result.is_ok (Ctype.check_type_layout env scty Type_layout.immediate)
+    then Pintval else Pgenval
   | _ ->
     num_nodes_visited, Pgenval
 
