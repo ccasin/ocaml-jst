@@ -397,11 +397,16 @@ type layout_annotation =
 let layout attrs =
   List.find_map
     (fun a -> match a.attr_name.txt with
-       | "ocaml.immediate"|"immediate" -> Some Immediate
-       | "ocaml.immediate64"|"immediate64" -> Some Immediate64
-       | "ocaml.void"|"void" -> Some Void
-       | "ocaml.value"|"value" -> Some Value
-       | "ocaml.any"|"any" -> Some Any
+       | "ocaml.immediate"|"immediate" ->
+         (mark_used a.attr_name; Some Immediate)
+       | "ocaml.immediate64"|"immediate64" ->
+         (mark_used a.attr_name; Some Immediate64)
+       | "ocaml.void"|"void" ->
+         (mark_used a.attr_name; Some Void)
+       | "ocaml.value"|"value" ->
+         (mark_used a.attr_name; Some Value)
+       | "ocaml.any"|"any" ->
+         (mark_used a.attr_name; Some Any)
        | _ -> None
     ) attrs
 

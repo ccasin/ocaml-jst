@@ -231,7 +231,7 @@ let common_initial_env add_type add_extension empty_env =
            [| [| |]; [| Type_layout.value |] |])
   |> add_type ident_string
   |> add_type ident_unit
-       ~kind:(variant [cstr ident_void []] [| |])
+       ~kind:(variant [cstr ident_void []] [| [| |] |])
   (* Predefined exceptions - alphabetical order *)
   |> add_extension ident_assert_failure
        [newgenty (Ttuple[type_string; type_int; type_int])]
