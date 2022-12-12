@@ -2950,8 +2950,8 @@ let unify1_var env t1 t2 =
         with Escape e ->
           raise_for Unify (Escape e)
       end;
-      link_type t1 t2;
       unification_layout_check env t2 layout;
+      link_type t1 t2;
       true
   | exception Unify_trace _ when !umode = Pattern ->
       false
