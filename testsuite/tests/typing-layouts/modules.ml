@@ -35,8 +35,8 @@ Line 1, characters 32-34:
 1 | module type S1'' = S1 with type 'a t = 'a list;;
                                     ^^
 Error: The type constraints are not consistent.
-Type 'a is not compatible with type 'b
-'a has layout void, which does not overlap with value.
+       Type 'a is not compatible with type 'b
+       'a has layout void, which does not overlap with value.
 |}];;
 
 module type S1'' = S1 with type s = t_void;;
@@ -84,6 +84,7 @@ Error: Signature mismatch:
          type 'a t = 'a list
        is not included in
          type 'a t = 'a list
+       The type 'a is not equal to the type 'a0
 |}]
 (* CJC XXX errors: error message *)
 
@@ -192,7 +193,7 @@ end = struct
   type t = A
 end;;
 [%%expect {|
-module rec Foo3 : sig type t = Bar3/2.t [@@immediate] end
+module rec Foo3 : sig type t = Bar3.t [@@immediate] end
 and Bar3 : sig type t [@@immediate] end
 |}];;
 
@@ -261,7 +262,7 @@ end = struct
 end;;
 [%%expect {|
 module rec Foo3 : sig type t = t3 [@@void] end
-and Bar3 : sig type 'a t type s = Foo3/2.t t end
+and Bar3 : sig type 'a t type s = Foo3.t t end
 |}];;
 
 (* Test 4: Nondep typedecl layout approximation in the Nondep_cannot_erase
