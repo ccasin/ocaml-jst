@@ -166,6 +166,14 @@ let bigarray_type_kind_and_layout env typ =
   | _ ->
       (Pbigarray_unknown, Pbigarray_unknown_layout)
 
+let value_kind_of_value_layout layout =
+  match Type_layout.Const.constrain_default_void layout with
+  | Value -> Pgenval
+  | Immediate -> Pintval
+  | Immediate64 ->
+    if !Clflags.native_code && Sys.word_size = 64 then Pintval else Pgenval
+  | Any | Void -> assert false
+
 (* Invariant: [value_kind] functions may only be called on types with layout
    value. *)
 let rec value_kind env ~visited ~depth ~num_nodes_visited ty
@@ -198,33 +206,28 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
     when (Path.same p Predef.path_array
           || Path.same p Predef.path_floatarray) ->
     (num_nodes_visited, Parrayval (array_type_kind env ty))
-  | Tconstr(p, _, _) ->
-    if cannot_proceed () then
-      (num_nodes_visited, Pgenval)
-    else begin
-      let visited = Numbers.Int.Set.add (get_id ty) visited in
-      match (Env.find_type p env).type_kind with
-      | exception Not_found ->
-        (* Safe to assume Pgenval here because of the invariant that
-           [value_kind] is only called on types of layout value *)
-        (num_nodes_visited, Pgenval)
-      | Type_variant (cstrs, rep) ->
-        value_kind_variant env ~visited ~depth ~num_nodes_visited cstrs rep
-      | Type_record (labels, rep) ->
-        let depth = depth + 1 in
-        value_kind_record env ~visited ~depth ~num_nodes_visited labels rep
-      | Type_abstract {layout} ->
-        let kind =
-          match Type_layout.Const.constrain_default_void layout with
-          | Any -> Misc.fatal_error "Typeopt value_kind"
-          | Value -> Pgenval
-          | Immediate64 -> Pintval
-          | Immediate -> Pintval
-          | Void -> assert false
-        in
-        num_nodes_visited, kind
-      | Type_open -> num_nodes_visited, Pgenval
-      end
+  | Tconstr(p, _, _) -> begin
+    try
+      let kind = (Env.find_type p env).type_kind in
+      if cannot_proceed () then
+        num_nodes_visited,
+        value_kind_of_value_layout (Type_layout.layout_bound_of_kind kind)
+      else
+        let visited = Numbers.Int.Set.add (get_id ty) visited in
+        match kind with
+        | Type_variant (cstrs, rep) ->
+          value_kind_variant env ~visited ~depth ~num_nodes_visited cstrs rep
+        | Type_record (labels, rep) ->
+          let depth = depth + 1 in
+          value_kind_record env ~visited ~depth ~num_nodes_visited labels rep
+        | Type_abstract {layout} ->
+          num_nodes_visited,
+          value_kind_of_value_layout layout
+        | Type_open -> num_nodes_visited, Pgenval
+    with Not_found -> num_nodes_visited, Pgenval
+      (* Safe to assume Pgenval in Not_found case because of the invariant
+         that [value_kind] is only called on types of layout value *)
+    end
   | Ttuple fields ->
     if cannot_proceed () then
       num_nodes_visited, Pgenval

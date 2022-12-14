@@ -93,8 +93,8 @@ Line 4, characters 35-41:
 4 |   type 'a s = 'a -> int constraint 'a = t
                                        ^^^^^^
 Error: The type constraints are not consistent.
-Type 'a is not compatible with type t
-t has layout void, which is not a sublayout of value.
+       Type 'a is not compatible with type t
+       t has layout void, which is not a sublayout of value.
 |}]
 
 (* CJC XXX errors: the F1 and F1' errors should ideally mention that the layout
@@ -309,13 +309,13 @@ let g (x : 'a void4) =
 Line 3, characters 15-16:
 3 |   | Void4 x -> x;;
                    ^
-Error: This expression has type 'a but an expression was expected of type 'a0
+Error: This expression has type 'a but an expression was expected of type 'b
        'a has layout value, which does not overlap with void.
 |}, Principal{|
 Lines 2-3, characters 2-16:
 2 | ..match x with
 3 |   | Void4 x -> x..
-Error: This expression has type 'a but an expression was expected of type 'a0
+Error: This expression has type 'a but an expression was expected of type 'b
        'a has layout value, which does not overlap with void.
 |}]
 (* CJC XXX errors: understand what's going on with Principal mode here (and improve
@@ -400,6 +400,11 @@ module M7_2 = struct
     | `Bas i -> I i
 end;;
 [%%expect {|
+Line 8, characters 16-21:
+8 |     | `Bar v -> { v }
+                    ^^^^^
+Error: This expression should not be a record, the expected type is result
+|}, Principal{|
 Line 8, characters 18-19:
 8 |     | `Bar v -> { v }
                       ^
@@ -429,8 +434,8 @@ Line 2, characters 54-78:
 2 |   type 'a t = [ `Foo of 'a | `Baz of int ] constraint 'a = void_unboxed_record
                                                           ^^^^^^^^^^^^^^^^^^^^^^^^
 Error: The type constraints are not consistent.
-Type 'a is not compatible with type void_unboxed_record
-void_unboxed_record has layout void, which is not a sublayout of value.
+       Type 'a is not compatible with type void_unboxed_record
+       void_unboxed_record has layout void, which is not a sublayout of value.
 |}];;
 
 module type S7_5 = sig
@@ -492,11 +497,11 @@ module M8_4 = struct
     | ({vur_void = _},i) -> i
 end;;
 [%%expect {|
-Line 4, characters 7-21:
+Line 4, characters 8-16:
 4 |     | ({vur_void = _},i) -> i
-           ^^^^^^^^^^^^^^
-Error: This pattern matches values of type void_unboxed_record
-       but a pattern was expected which matches values of type 'a
+            ^^^^^^^^
+Error: The record field vur_void belongs to the type void_unboxed_record
+       but is mixed here with fields of type 'a
        void_unboxed_record has layout void, which is not a sublayout of value.
 |}];;
 
@@ -521,8 +526,8 @@ Line 2, characters 34-58:
 2 |   type 'a t = int * 'a constraint 'a = void_unboxed_record
                                       ^^^^^^^^^^^^^^^^^^^^^^^^
 Error: The type constraints are not consistent.
-Type 'a is not compatible with type void_unboxed_record
-void_unboxed_record has layout void, which is not a sublayout of value.
+       Type 'a is not compatible with type void_unboxed_record
+       void_unboxed_record has layout void, which is not a sublayout of value.
 |}];;
 
 module type S8_7 = sig
@@ -581,6 +586,8 @@ Error: Signature mismatch:
        is not included in
          sig val x : string end
        Values do not match: val x : 'a is not included in val x : string
+       The type string is not compatible with the type string
+       string has layout value, which is not a sublayout of immediate.
 |}];;
 
 (* This hits the second linktype in moregen (requires expansion to see it's a
@@ -609,6 +616,8 @@ Error: Signature mismatch:
        is not included in
          sig val x : string end
        Values do not match: val x : 'a t is not included in val x : string
+       The type string t = string is not compatible with the type string
+       string has layout value, which is not a sublayout of immediate.
 |}]
 
 (**************************************************************)
@@ -623,8 +632,8 @@ end;;
 Line 5, characters 4-7:
 5 |     t.v # baz10
         ^^^
-Error: This expression has type 'a
-       It has no method baz10
+Error: Methods must have layout value.
+       This expression has layout void, which does not overlap with value.
 |}]
 
 module M10_2 = struct
@@ -683,8 +692,8 @@ Line 2, characters 36-47:
 2 |   type 'a t = < l : 'a > constraint 'a = t_void
                                         ^^^^^^^^^^^
 Error: The type constraints are not consistent.
-Type 'a is not compatible with type t_void
-t_void has layout void, which is not a sublayout of value.
+       Type 'a is not compatible with type t_void
+       t_void has layout void, which is not a sublayout of value.
 |}];;
 (* CJC XXX errors *)
 
@@ -793,9 +802,9 @@ module type S11_7 = sig
     end
 end;;
 [%%expect{|
-Line 4, characters 10-13:
+Line 4, characters 6-22:
 4 |       val baz : t_void
-              ^^^
+          ^^^^^^^^^^^^^^^^
 Error: Variables bound in a class must have layout value.
        baz has layout void, which is not a sublayout of value.
 |}];;

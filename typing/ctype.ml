@@ -1929,10 +1929,10 @@ let check_decl_layout env decl layout =
 
 (* CJC XXX errors: locations and better error reporting.  Maybe this should take
    in a trace_exn? *)
-let constrain_type_layout_exn env ty layout =
+let constrain_type_layout_exn env texn ty layout =
   match constrain_type_layout env ty layout with
   | Ok _ -> ()
-  | Error err -> raise_for Unify (Bad_layout (ty,err))
+  | Error err -> raise_for texn (Bad_layout (ty,err))
 
 let estimate_type_layout env typ =
   layout_of_result (estimate_type_layout env typ)
@@ -1977,7 +1977,7 @@ let rec intersect_type_layout env ty1 layout2 =
 (* See comment on [layout_unification_mode] *)
 let unification_layout_check env ty layout =
   match !lmode with
-  | Perform_checks -> constrain_type_layout_exn env ty layout
+  | Perform_checks -> constrain_type_layout_exn env Unify ty layout
   | Delay_checks r -> r := (ty,layout) :: !r
   | Skip_checks -> ()
 
@@ -3660,7 +3660,7 @@ let filter_arrow env t l =
     Tvar { layout } ->
       let t', marg, t1, mret, t2 = function_type (get_level t) in
       link_type t t';
-      constrain_type_layout_exn env t' layout;
+      constrain_type_layout_exn env Unify t' layout;
       (marg, t1, mret, t2)
   | Tarrow((l', marg, mret), t1, t2, _) ->
       if l = l' || !Clflags.classic && l = Nolabel && not (is_optional l')
@@ -3675,6 +3675,7 @@ type filter_method_failure =
   | Unification_error of unification_error
   | Not_a_method
   | Not_an_object of type_expr
+  | Not_a_value of Type_layout.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 
@@ -3737,7 +3738,10 @@ let filter_method env name ty =
       let level = get_level ty in
       let scope = get_scope ty in
       let ty', ty_meth = object_type ~level ~scope in
-      constrain_type_layout_exn env ty Type_layout.value;
+      begin match constrain_type_layout env ty Type_layout.value with
+      | Ok _ -> ()
+      | Error err -> raise (Filter_method_failed (Not_a_value err))
+      end;
       link_type ty ty';
       ty_meth
   | Tobject(f, _) ->
@@ -4127,7 +4131,7 @@ let rec moregen inst_nongen variance type_pairs env t1 t2 =
         update_scope_for Moregen (get_scope t1) t2;
         occur_for Moregen env t1 t2;
         link_type t1 t2;
-        constrain_type_layout_exn env t2 layout
+        constrain_type_layout_exn env Moregen t2 layout
     | (Tconstr (p1, [], _), Tconstr (p2, [], _)) when Path.same p1 p2 ->
         ()
     | _ ->
@@ -4143,7 +4147,7 @@ let rec moregen inst_nongen variance type_pairs env t1 t2 =
               moregen_occur env (get_level t1') t2;
               update_scope_for Moregen (get_scope t1') t2;
               link_type t1' t2;
-              constrain_type_layout_exn env t2 layout
+              constrain_type_layout_exn env Moregen t2 layout
           | (Tarrow ((l1,a1,r1), t1, u1, _),
              Tarrow ((l2,a2,r2), t2, u2, _)) when
                (l1 = l2

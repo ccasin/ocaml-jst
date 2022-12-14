@@ -287,6 +287,7 @@ type filter_method_failure =
   | Unification_error of Errortrace.unification_error
   | Not_a_method
   | Not_an_object of type_expr
+  | Not_a_value of Type_layout.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 

@@ -115,6 +115,7 @@ type error =
       Datatype_kind.t * Longident.t * (Path.t * Path.t) * (Path.t * Path.t) list
   | Invalid_format of string
   | Not_an_object of type_expr * type_forcing_context option
+  | Not_a_value of Type_layout.Violation.t * type_forcing_context option
   | Undefined_method of type_expr * string * string list option
   | Undefined_self_method of string * string list
   | Virtual_class of Longident.t
@@ -4489,6 +4490,8 @@ and type_expect_
                         | _ -> None
                       in
                       Undefined_method(obj.exp_type, met, valid_methods)
+                  | Not_a_value err ->
+                      Not_a_value (err, explanation)
                 in
                 raise (Error(e.pexp_loc, env, error))
             in
@@ -6965,6 +6968,13 @@ let report_error ~loc env = function
         Printtyp.type_expr ty;
       report_type_expected_explanation_opt explanation ppf
     ) ()
+  | Not_a_value (err, explanation) ->
+    Location.error_of_printer ~loc (fun ppf () ->
+      fprintf ppf "Methods must have layout value.@ %a"
+        (Type_layout.Violation.report_with_name ~name:"This expression")
+        err;
+      report_type_expected_explanation_opt explanation ppf)
+      ()
   | Undefined_method (ty, me, valid_methods) ->
       Location.error_of_printer ~loc (fun ppf () ->
         Printtyp.wrap_printing_env ~error:true env (fun () ->
