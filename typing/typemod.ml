@@ -312,7 +312,7 @@ let check_type_decl env sg loc id row_id newdecl decl =
   in
   let env = Env.add_signature sg env in
   Includemod.type_declarations ~mark:Mark_both ~loc env fresh_id newdecl decl;
-  Typedecl.check_coherence env loc path newdecl
+  ignore (Typedecl.check_coherence env loc path newdecl)
 
 let make_variance p n i =
   let open Variance in
@@ -617,10 +617,8 @@ let merge_constraint initial_env loc sg lid constr =
             ~sig_env ~sig_decl:decl ~outer_env:initial_env sdecl in
         let newdecl = tdecl.typ_type in
         let before_ghosts, row_id, after_ghosts = split_row_id s ghosts in
-        let newdecl =
-          check_type_decl outer_sig_env sg_for_env sdecl.ptype_loc
-            id row_id newdecl decl
-        in
+        check_type_decl outer_sig_env sg_for_env sdecl.ptype_loc
+          id row_id newdecl decl;
         let decl_row = {decl_row with type_params = newdecl.type_params} in
         let rs' = if rs = Trec_first then Trec_not else rs in
         let ghosts =
@@ -640,10 +638,8 @@ let merge_constraint initial_env loc sg lid constr =
         let newdecl = tdecl.typ_type and loc = sdecl.ptype_loc in
         let before_ghosts, row_id, after_ghosts = split_row_id s ghosts in
         let ghosts = List.rev_append before_ghosts after_ghosts in
-        let newdecl =
-          check_type_decl outer_sig_env sg_for_env loc
-            id row_id newdecl sig_decl
-        in
+        check_type_decl outer_sig_env sg_for_env loc
+          id row_id newdecl sig_decl;
         begin match constr with
           With_type _ ->
             return ~ghosts
