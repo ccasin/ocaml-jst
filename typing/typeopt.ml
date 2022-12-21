@@ -454,3 +454,5 @@ let classify_lazy_argument : Typedtree.expression ->
 let value_kind_union (k1 : Lambda.value_kind) (k2 : Lambda.value_kind) =
   if Lambda.equal_value_kind k1 k2 then k1
   else Pgenval
+
+let maybe_pointer_type env ty = maybe_pointer_type env (scrape_ty env ty)
