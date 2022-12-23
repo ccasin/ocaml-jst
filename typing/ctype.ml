@@ -319,7 +319,7 @@ let begin_skipping_layout_checks () =
   lmode := Skip_checks
 
 let stop_skipping_layout_checks () =
-  lmode := Skip_checks
+  lmode := Perform_checks
 
 (*** Checks for type definitions ***)
 
