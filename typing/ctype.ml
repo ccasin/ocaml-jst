@@ -303,23 +303,13 @@ type layout_unification_mode =
 
 let lmode = ref Perform_checks
 
-(* The begin/stop functions don't need to save/restore the previous mode because
-   they aren't interleaved. *)
-let begin_delaying_layout_checks () = lmode := Delay_checks (ref [])
+let delay_layout_checks_in f =
+  let r = ref [] in
+  Misc.protect_refs [Misc.R (lmode, Delay_checks r)] f;
+  !r
 
-let stop_delaying_layout_checks () =
-  match !lmode with
-  | Perform_checks | Skip_checks -> assert false
-  | Delay_checks r -> begin
-      lmode := Perform_checks;
-      !r
-    end
-
-let begin_skipping_layout_checks () =
-  lmode := Skip_checks
-
-let stop_skipping_layout_checks () =
-  lmode := Perform_checks
+let skip_layout_checks_in f =
+  Misc.protect_refs [Misc.R (lmode, Skip_checks)] f
 
 (*** Checks for type definitions ***)
 
@@ -1572,10 +1562,7 @@ let apply env params body args =
 let () =
   Subst.ctype_apply_env_empty :=
     fun params body args ->
-      begin_skipping_layout_checks ();
-      let result = apply Env.empty params body args in
-      stop_skipping_layout_checks ();
-      result
+      skip_layout_checks_in (fun () -> apply Env.empty params body args)
 
                               (****************************)
                               (*  Abbreviation expansion  *)
@@ -3601,9 +3588,8 @@ let unify env ty1 ty2 =
   unify_pairs (ref env) ty1 ty2 []
 
 let unify_delaying_layout_checks env ty1 ty2 =
-  begin_delaying_layout_checks ();
-  unify_pairs (ref env) ty1 ty2 [];
-  stop_delaying_layout_checks ()
+  delay_layout_checks_in (fun () ->
+    unify_pairs (ref env) ty1 ty2 [])
 
 (**** Special cases of unification ****)
 
