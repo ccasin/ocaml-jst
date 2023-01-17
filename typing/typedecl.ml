@@ -500,7 +500,7 @@ let transl_declaration env sdecl (id, uid) =
             then Type_layout.any
             else Type_layout.value
           in
-          Type_layout.of_layout_annotation ~default layout_annotation
+          Type_layout.of_const_layout ~default layout_annotation
         in
         Ttype_abstract, Type_abstract {layout}
       | Ptype_variant scstrs ->
@@ -554,7 +554,7 @@ let transl_declaration env sdecl (id, uid) =
         let rep =
           if unbox then
             let layout =
-              Type_layout.of_layout_annotation ~default:Type_layout.any
+              Type_layout.of_const_layout ~default:Type_layout.any
                 layout_annotation
             in
             Variant_unboxed layout
@@ -576,7 +576,7 @@ let transl_declaration env sdecl (id, uid) =
           let rep =
             if unbox then
               let layout =
-                Type_layout.of_layout_annotation ~default:Type_layout.any
+                Type_layout.of_const_layout ~default:Type_layout.any
                   layout_annotation
               in
               Record_unboxed layout
@@ -1366,7 +1366,7 @@ let transl_type_decl env rec_flag sdecl_list =
   (* Check layout annotations *)
   List.iter (fun tdecl ->
     let layout =
-      Type_layout.of_layout_annotation ~default:Type_layout.any
+      Type_layout.of_const_layout ~default:Type_layout.any
         tdecl.typ_layout_annotation
     in
     match Ctype.check_decl_layout final_env tdecl.typ_type layout with

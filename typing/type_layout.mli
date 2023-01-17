@@ -21,12 +21,7 @@ type t = Types.layout
    against module signatures.  At that point, any remaining sort variables
    may be freely defaulted. *)
 module Const : sig
-  type t =
-    | Any
-    | Value
-    | Immediate64
-    | Immediate
-    | Void
+  type t = Builtin_attributes.const_layout
 
   val constrain_default_void : Types.layout -> t
   val can_make_void : Types.layout -> bool
@@ -76,8 +71,8 @@ val intersection : t -> t -> (t, Violation.t) Result.t
 val sublayout : t -> t -> (t, Violation.t) result
 
 (** Translate a user layout annotation to a layout *)
-val of_layout_annotation :
-  Builtin_attributes.layout_annotation option -> default:t -> t
+val of_const_layout :
+  Builtin_attributes.const_layout option -> default:t -> t
 
 (** Find a layout in attributes, defaulting to ~default *)
 val of_attributes : default:t -> Parsetree.attributes -> t

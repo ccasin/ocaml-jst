@@ -17,32 +17,27 @@ open Types
 type t = layout
 
 module Const = struct
-  type t =
-    | Any
-    | Value
-    | Immediate64
-    | Immediate
-    | Void
+  type t = Builtin_attributes.const_layout
 
   let rec constrain_sort_default_void = function
-    | Types.Void -> Void
-    | Types.Value -> Value
+    | Types.Void -> Builtin_attributes.Void
+    | Types.Value -> Builtin_attributes.Value
     | Types.Var r ->
       match !r with
       | Some sort -> constrain_sort_default_void sort
-      | None -> (r := Some Types.Void; Void)
+      | None -> (r := Some Types.Void; Builtin_attributes.Void)
 
   let constrain_default_void = function
-    | Types.Any -> Any
+    | Types.Any -> Builtin_attributes.Any
     | Types.Sort sort -> constrain_sort_default_void sort
-    | Types.Immediate64 -> Immediate64
-    | Types.Immediate -> Immediate
+    | Types.Immediate64 -> Builtin_attributes.Immediate64
+    | Types.Immediate -> Builtin_attributes.Immediate
 
-  let can_make_void l = Void = constrain_default_void l
+  let can_make_void l = Builtin_attributes.Void = constrain_default_void l
 end
 
 
-let of_layout_annotation annot ~default =
+let of_const_layout annot ~default =
   match annot with
   | None -> default
   | Some Builtin_attributes.Any         -> Any
@@ -52,7 +47,7 @@ let of_layout_annotation annot ~default =
   | Some Builtin_attributes.Immediate   -> Immediate
 
 let of_attributes ~default attrs =
-  of_layout_annotation ~default (Builtin_attributes.layout attrs)
+  of_const_layout ~default (Builtin_attributes.layout attrs)
 
 let rec sort_to_string = function
   | Var r -> begin
