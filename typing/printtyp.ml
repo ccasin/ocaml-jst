@@ -1464,12 +1464,12 @@ let rec tree_of_type_decl id decl =
   in
   let (name, args) = type_defined decl in
   let constraints = tree_of_constraints params in
-  let olayout_of_layout = function
-    | Builtin_attributes.Any -> Olay_any
-    | Builtin_attributes.Value -> Olay_value
-    | Builtin_attributes.Void -> Olay_void
-    | Builtin_attributes.Immediate64 -> Olay_immediate64
-    | Builtin_attributes.Immediate -> Olay_immediate
+  let olayout_of_layout = Layout.(function
+    | Any -> Olay_any
+    | Value -> Olay_value
+    | Void -> Olay_void
+    | Immediate64 -> Olay_immediate64
+    | Immediate -> Olay_immediate)
   in
   let lay =
     Option.map olayout_of_layout
@@ -2203,7 +2203,7 @@ let hide_variant_name t =
       newty2 ~level:(get_level t)
         (Tvariant
            (create_row ~fields ~fixed ~closed ~name:None
-              ~more:(newvar2 (get_level more) Type_layout.value)))
+              ~more:(newvar2 (get_level more) Layout.value)))
   | _ -> t
 
 let prepare_expansion Errortrace.{ty; expanded} =
