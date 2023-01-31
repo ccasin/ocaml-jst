@@ -6072,7 +6072,7 @@ let is_immediate env ty =
   let layout =
     (* In bytecode, we don't know at compile time whether we are
        targeting 32 or 64 bits. *)
-    if !Clflags.native_code && Sys.word_size = 64 then Layout.Immediate64
-    else Layout.Immediate
+    if !Clflags.native_code && Sys.word_size = 64 then Layout.immediate64
+    else Layout.immediate
   in
-  Result.is_ok (check_type_layout env ty (Layout.of_const layout))
+  Result.is_ok (check_type_layout env ty layout)

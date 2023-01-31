@@ -4147,7 +4147,7 @@ and type_expect_
               raise (Error (exp.exp_loc, env, error))
         in
         match expected_opath, opt_exp_opath with
-        | None, None -> newvar (Layout.new_var ()), None
+        | None, None -> newvar (Layout.of_new_sort_var ()), None
         | Some _, None -> ty_expected, expected_opath
         | Some(_, _, true), Some _ -> ty_expected, expected_opath
         | (None | Some (_, _, false)), Some (_, p', _) ->
@@ -4300,7 +4300,7 @@ and type_expect_
       let (record, rmode, label, expected_type) =
         type_label_access env srecord Env.Mutation lid in
       let ty_record =
-        if expected_type = None then newvar (Layout.new_var ())
+        if expected_type = None then newvar (Layout.of_new_sort_var ())
         else record.exp_type
       in
       let (label_loc, label, newval) =

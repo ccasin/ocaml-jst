@@ -278,7 +278,7 @@ let make_params env params =
   let make_param (sty, v) =
     try
       let layout =
-        Type_layout.of_attributes ~default:(Layout.new_var ())
+        Type_layout.of_attributes ~default:(Layout.of_new_sort_var ())
           sty.ptyp_attributes
       in
       (transl_type_param env sty layout, v)

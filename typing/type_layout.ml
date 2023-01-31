@@ -138,7 +138,7 @@ let intersection l1 l2 =
     Ok Layout.immediate
   | Const ((Immediate64 | Immediate) as imm), l
   | l, Const ((Immediate64 | Immediate) as imm) ->
-    equality_check (Layout.equate (Layout.of_get_result l) Layout.value)
+    equality_check (Layout.equate (Layout.of_desc l) Layout.value)
       (Layout.of_const imm)
   | _, _ -> equality_check (Layout.equate l1 l2) l1
 

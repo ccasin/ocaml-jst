@@ -40,7 +40,7 @@ module Sort : sig
   (** A sort variable that can be unified during type-checking. *)
   type var
 
-  (** Create a new variable sort that can be unified. *)
+  (** Create a new sort variable that can be unified. *)
   val new_var : unit -> t
 
   val of_const : const -> t
@@ -56,6 +56,19 @@ end
 
 type sort = Sort.t
 
+(** This module describes layouts, which classify types. Layouts are arranged
+    in the following lattice:
+
+    {[
+                any
+              /    \
+           value  void
+             |
+         immediate64
+             |
+         immediate
+    ]}
+*)
 module Layout : sig
   (** A Layout.t is a full description of the runtime representation of values
       of a given type. It includes sorts, but also the abstract top layout
@@ -92,23 +105,23 @@ module Layout : sig
   val immediate : t
 
   (** Create a fresh sort variable, packed into a layout. *)
-  val new_var : unit -> t
+  val of_new_sort_var : unit -> t
 
   val of_sort : Sort.t -> t
 
   (** Convert a [const] to a [Layout.t]. *)
   val of_const : const -> t
 
-  type get_result =
+  type desc =
     | Const of const
     | Var of Sort.var
 
   (** Extract the [const] from a [Layout.t], looking through unified
       sort variables. Returns [Var] if the final, non-variable layout has not
       yet been determined. *)
-  val get : t -> get_result
+  val get : t -> desc
 
-  val of_get_result : get_result -> t
+  val of_desc : desc -> t
 
   (** Like [get], but defaults the layout if it is undetermined. *)
   val get_defaulting : default:Sort.const -> t -> const

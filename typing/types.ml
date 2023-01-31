@@ -120,7 +120,7 @@ module Layout = struct
     | Immediate64 -> "immediate64"
     | Immediate -> "immediate"
 
-  let new_var () = Sort (Sort.new_var ())
+  let of_new_sort_var () = Sort (Sort.new_var ())
 
   let of_sort s = Sort s
 
@@ -131,15 +131,15 @@ module Layout = struct
     | Value -> value
     | Void -> void
 
-  type get_result =
+  type desc =
     | Const of const
     | Var of Sort.var
 
-  let of_get_result = function
+  let of_desc = function
     | Const c -> of_const c
     | Var v -> of_sort (Sort.of_var v)
 
-  let repr ~default : t -> get_result = function
+  let repr ~default : t -> desc = function
     | Any -> Const Any
     | Immediate -> Const Immediate
     | Immediate64 -> Const Immediate64
