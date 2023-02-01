@@ -104,7 +104,6 @@ COMPILERLIBS_SOURCES=\
   typing/primitive.ml \
   typing/shape.ml \
   typing/types.ml \
-  typing/type_layout.ml \
   typing/btype.ml \
   typing/subst.ml \
   typing/predef.ml \

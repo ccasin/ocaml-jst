@@ -350,7 +350,7 @@ let without_generating_equations f =
 *)
 type layout_unification_mode =
   | Perform_checks
-  | Delay_checks of (type_expr * Type_layout.t) list ref
+  | Delay_checks of (type_expr * layout) list ref
   | Skip_checks
 
 let lmode = ref Perform_checks
@@ -512,8 +512,8 @@ let remove_mode_and_layout_variables ty =
     if TypeSet.mem ty !visited then () else begin
       visited := TypeSet.add ty !visited;
       match get_desc ty with
-      | Tvar { layout } -> Type_layout.default_to_value layout
-      | Tunivar { layout } -> Type_layout.default_to_value layout
+      | Tvar { layout } -> Layout.default_to_value layout
+      | Tunivar { layout } -> Layout.default_to_value layout
       | Tarrow ((_,marg,mret),targ,tret,_) ->
          let _ = Alloc_mode.constrain_lower marg in
          let _ = Alloc_mode.constrain_lower mret in
@@ -1902,7 +1902,7 @@ let rec estimate_type_layout env ty =
   match get_desc ty with
   | Tconstr(p, _, _) -> begin
       match Env.find_type p env with
-      | { type_kind = k } -> Layout (Type_layout.layout_bound_of_kind k)
+      | { type_kind = k } -> Layout (layout_bound_of_kind k)
       | exception Not_found -> Layout any
     end
   | Tvariant row ->
@@ -1948,12 +1948,12 @@ let rec estimate_type_layout env ty =
 let rec constrain_type_layout ~fixed env ty1 layout2 fuel =
   let constrain_unboxed ty1 =
     match estimate_type_layout env ty1 with
-    | Layout layout1 -> Type_layout.sublayout layout1 layout2
+    | Layout layout1 -> Layout.sub layout1 layout2
     | TyVar (layout1, ty) ->
-      if fixed then Type_layout.sublayout layout1 layout2
+      if fixed then Layout.sub layout1 layout2
       else
         Result.map (fun layout1 -> set_var_layout ty layout1; layout1)
-          (Type_layout.intersection layout1 layout2)
+          (Layout.intersection layout1 layout2)
   in
   (* This is an optimization to avoid unboxing if we can tell the constraint is
      satisfied from the type_kind *)
@@ -1961,11 +1961,11 @@ let rec constrain_type_layout ~fixed env ty1 layout2 fuel =
   | Tconstr(p, _args, _abbrev) -> begin
       let layout_bound =
         begin match Env.find_type p env with
-        | { type_kind = k; _ } -> Type_layout.layout_bound_of_kind k
+        | { type_kind = k; _ } -> layout_bound_of_kind k
         | exception Not_found -> Layout.any
         end
       in
-      match Type_layout.sublayout layout_bound layout2 with
+      match Layout.sub layout_bound layout2 with
       | Ok _ as ok -> ok
       | Error _ as err when fuel < 0 -> err
       | Error _ as err ->
@@ -1988,8 +1988,8 @@ let check_decl_layout env decl layout =
   match decl_is_unboxed decl with
   | Some arg -> check_type_layout env arg layout
   | None ->
-      match Type_layout.sublayout
-              (Type_layout.layout_bound_of_kind decl.type_kind) layout with
+      match Layout.sub
+              (layout_bound_of_kind decl.type_kind) layout with
       | Ok _ as ok -> ok
       | Error _ as err ->
           match decl.type_manifest with
@@ -2029,7 +2029,7 @@ let type_sort env ty =
 *)
 let rec intersect_type_layout env ty1 layout2 =
   let intersect_unboxed ty1 =
-    Type_layout.intersection (estimate_type_layout env ty1) layout2
+    Layout.intersection (estimate_type_layout env ty1) layout2
   in
   match get_desc ty1 with
   | Tpoly (ty, _) -> intersect_type_layout env ty layout2
@@ -3775,7 +3775,7 @@ type filter_method_failure =
   | Unification_error of unification_error
   | Not_a_method
   | Not_an_object of type_expr
-  | Not_a_value of Type_layout.Violation.t
+  | Not_a_value of Layout.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 
@@ -5901,7 +5901,7 @@ let nondep_type_decl env mid is_covariant decl =
       try map_kind (nondep_type_rec env mid) decl.type_kind
       with Nondep_cannot_erase _ when is_covariant ->
         Types.kind_abstract
-          ~layout:(Type_layout.layout_bound_of_kind decl.type_kind)
+          ~layout:(layout_bound_of_kind decl.type_kind)
     and tm, priv =
       match decl.type_manifest with
       | None -> None, decl.type_private

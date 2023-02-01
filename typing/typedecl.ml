@@ -62,9 +62,9 @@ type error =
   | Multiple_native_repr_attributes
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
-  | Layout of Type_layout.Violation.t
+  | Layout of Layout.Violation.t
   | Layout_sort of
-      {lloc : layout_sort_loc; typ : type_expr; err : Type_layout.Violation.t}
+      {lloc : layout_sort_loc; typ : type_expr; err : Layout.Violation.t}
   | Layout_empty_record
   | Separability of Typedecl_separability.error
   | Bad_unboxed_attribute of string
@@ -162,7 +162,7 @@ let enter_type rec_flag env sdecl (id, uid) =
      checked and then unified with the real manifest and checked against the
      kind. *)
   let layout =
-    Type_layout.of_attributes ~default:Layout.any sdecl.ptype_attributes
+    Layout.of_attributes ~default:Layout.any sdecl.ptype_attributes
   in
   if not needed then env else
   let decl =
@@ -172,7 +172,7 @@ let enter_type rec_flag env sdecl (id, uid) =
            (Sort 'l) and default to value if it's not determined by use. *)
         List.map (fun ({ptyp_attributes;_},_) ->
           let layout =
-            Type_layout.of_attributes ~default:Layout.value
+            Layout.of_attributes ~default:Layout.value
               ptyp_attributes
           in
           Btype.newgenvar layout) sdecl.ptype_params;
@@ -278,7 +278,7 @@ let make_params env params =
   let make_param (sty, v) =
     try
       let layout =
-        Type_layout.of_attributes ~default:(Layout.of_new_sort_var ())
+        Layout.of_attributes ~default:(Layout.of_new_sort_var ())
           sty.ptyp_attributes
       in
       (transl_type_param env sty layout, v)
@@ -500,7 +500,7 @@ let transl_declaration env sdecl (id, uid) =
             then Layout.any
             else Layout.value
           in
-          Type_layout.of_const_layout ~default layout_annotation
+          Layout.of_const_option ~default layout_annotation
         in
         Ttype_abstract, Type_abstract {layout}
       | Ptype_variant scstrs ->
@@ -554,7 +554,7 @@ let transl_declaration env sdecl (id, uid) =
         let rep =
           if unbox then
             let layout =
-              Type_layout.of_const_layout ~default:Layout.any
+              Layout.of_const_option ~default:Layout.any
                 layout_annotation
             in
             Variant_unboxed layout
@@ -576,7 +576,7 @@ let transl_declaration env sdecl (id, uid) =
           let rep =
             if unbox then
               let layout =
-                Type_layout.of_const_layout ~default:Layout.any
+                Layout.of_const_option ~default:Layout.any
                   layout_annotation
               in
               Record_unboxed layout
@@ -859,7 +859,7 @@ let default_decl_layout decl =
      and recursively in the types in the kind, with [iter_type_expr]. *)
   let default_typ typ =
     match get_desc typ with
-    | Tvar { layout } -> Type_layout.default_to_value layout
+    | Tvar { layout } -> Layout.default_to_value layout
     | _ -> ()
   in
   let default_ldecl (ldecl : Types.label_declaration) =
@@ -891,7 +891,7 @@ let default_decls_layout decls =
    [Ctype.type_layout_representable] that avoids duplicated work *)
 let check_representable env loc lloc typ =
   match Ctype.type_sort env typ with
-  | Ok s -> Type_layout.default_to_value (Layout.of_sort s)
+  | Ok s -> Layout.default_to_value (Layout.of_sort s)
   | Error err -> raise (Error (loc,Layout_sort {lloc; typ; err}))
 
 (* The [update_x_layouts] functions infer more precise layouts in the type kind,
@@ -1366,7 +1366,7 @@ let transl_type_decl env rec_flag sdecl_list =
   (* Check layout annotations *)
   List.iter (fun tdecl ->
     let layout =
-      Type_layout.of_const_layout ~default:Layout.any
+      Layout.of_const_option ~default:Layout.any
         tdecl.typ_layout_annotation
     in
     match Ctype.check_decl_layout final_env tdecl.typ_type layout with
@@ -1926,7 +1926,7 @@ let transl_with_constraint id ?fixed_row_path ~sig_env ~sig_decl ~outer_env
       (* CJC XXX: this is a gross hack.  See the comments in the [Ptyp_package]
          case of [Typetexp.transl_type_aux]. *)
       let layout = Layout.value in
-        (* Type_layout.(of_attributes ~default:value sdecl.ptype_attributes) *)
+        (* Layout.(of_attributes ~default:value sdecl.ptype_attributes) *)
       Types.kind_abstract ~layout, false
   in
   let new_sig_decl =
@@ -2029,12 +2029,12 @@ let approx_type_decl sdecl_list =
     (fun sdecl ->
        let injective = sdecl.ptype_kind <> Ptype_abstract in
        let layout =
-         Type_layout.of_attributes ~default:Layout.value
+         Layout.of_attributes ~default:Layout.value
            sdecl.ptype_attributes
        in
        let params =
          List.map (fun (styp,_) ->
-           Type_layout.of_attributes ~default:Layout.value
+           Layout.of_attributes ~default:Layout.value
              styp.ptyp_attributes)
            sdecl.ptype_params
        in
@@ -2301,7 +2301,7 @@ let report_error ppf = function
          a direct argument or result of the primitive,@ \
          it should not occur deeply into its type.@]"
         (match kind with Unboxed -> "@unboxed" | Untagged -> "@untagged")
-  | Layout v -> Type_layout.Violation.report_with_name ~name:"This type" ppf v
+  | Layout v -> Layout.Violation.report_with_name ~name:"This type" ppf v
   | Layout_sort {lloc; typ; err} ->
     let s =
       match lloc with
@@ -2309,7 +2309,7 @@ let report_error ppf = function
       | Record -> "Record element"
     in
     fprintf ppf "@[%s types must have a representable layout.@ \ %a@]" s
-      (Type_layout.Violation.report_with_offender
+      (Layout.Violation.report_with_offender
          ~offender:(fun ppf -> Printtyp.type_expr ppf typ)) err
   | Layout_empty_record ->
     fprintf ppf "@[Records must contain at least one runtime value.@]"

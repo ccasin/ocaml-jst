@@ -50,7 +50,6 @@
     primitive
     shape
     types
-    type_layout
     btype
     lazy_backtrack
     subst
@@ -129,7 +128,6 @@
 (copy_files ../../typing/primitive.ml)
 (copy_files ../../typing/shape.ml)
 (copy_files ../../typing/types.ml)
-(copy_files ../../typing/type_layout.ml)
 (copy_files ../../typing/btype.ml)
 (copy_files ../../typing/subst.ml)
 (copy_files ../../typing/predef.ml)
@@ -181,7 +179,6 @@
 (copy_files ../../typing/primitive.mli)
 (copy_files ../../typing/shape.mli)
 (copy_files ../../typing/types.mli)
-(copy_files ../../typing/type_layout.mli)
 (copy_files ../../typing/btype.mli)
 (copy_files ../../typing/subst.mli)
 (copy_files ../../typing/predef.mli)

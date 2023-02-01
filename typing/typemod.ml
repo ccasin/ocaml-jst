@@ -3527,7 +3527,7 @@ let report_error ~loc _env = function
   | Toplevel_nonvalue (id, sort) ->
       Location.errorf ~loc
         "@[Top-level module bindings must have layout value, but@ \
-         %s has layout@ %a.@]" id Type_layout.format (Layout.of_sort sort)
+         %s has layout@ %a.@]" id Layout.format (Layout.of_sort sort)
 
 let report_error env ~loc err =
   Printtyp.wrap_printing_env ~error:true env

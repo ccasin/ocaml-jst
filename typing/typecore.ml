@@ -115,7 +115,7 @@ type error =
       Datatype_kind.t * Longident.t * (Path.t * Path.t) * (Path.t * Path.t) list
   | Invalid_format of string
   | Not_an_object of type_expr * type_forcing_context option
-  | Not_a_value of Type_layout.Violation.t * type_forcing_context option
+  | Not_a_value of Layout.Violation.t * type_forcing_context option
   | Undefined_method of type_expr * string * string list option
   | Undefined_self_method of string * string list
   | Virtual_class of Longident.t
@@ -4883,7 +4883,7 @@ and type_expect_
              (Texp_poly cty, loc, sexp.pexp_attributes) :: exp.exp_extra }
   | Pexp_newtype({txt=name}, sbody) ->
       let layout =
-        Type_layout.of_const_layout ~default:Layout.value
+        Layout.of_const_option ~default:Layout.value
           (Builtin_attributes.layout sexp.pexp_attributes)
       in
       let ty =
@@ -7192,7 +7192,7 @@ let report_error ~loc env = function
   | Not_a_value (err, explanation) ->
     Location.error_of_printer ~loc (fun ppf () ->
       fprintf ppf "Methods must have layout value.@ %a"
-        (Type_layout.Violation.report_with_name ~name:"This expression")
+        (Layout.Violation.report_with_name ~name:"This expression")
         err;
       report_type_expected_explanation_opt explanation ppf)
       ()

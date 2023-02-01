@@ -108,7 +108,7 @@ type error =
   | Duplicate of string * string
   | Closing_self_type of class_signature
   | Polymorphic_class_parameter
-  | Non_value_binding of string * Type_layout.Violation.t
+  | Non_value_binding of string * Layout.Violation.t
 
 
 exception Error of Location.t * Env.t * error
@@ -1351,7 +1351,7 @@ and class_expr_aux cl_num val_env met_env virt self_scope scl =
              List.iter
                (fun (loc, mode, sort) ->
                   Typecore.escape ~loc ~env:val_env mode;
-                  match Type_layout.sublayout (Layout.of_sort sort) Layout.value with
+                  match Layout.sub (Layout.of_sort sort) Layout.value with
                   | Ok _ -> ()
                   | Error err ->
                     raise (Error(loc,met_env,
@@ -2185,7 +2185,7 @@ let report_error env ppf = function
   | Non_value_binding (nm, err) ->
     fprintf ppf
       "@[Variables bound in a class must have layout value.@ %a@]"
-      (Type_layout.Violation.report_with_name ~name:nm) err
+      (Layout.Violation.report_with_name ~name:nm) err
 
 let report_error env ppf err =
   Printtyp.wrap_printing_env ~error:true

@@ -52,7 +52,7 @@ type error =
   | Unsupported_extension of Clflags.Extension.t
   | Polymorphic_optional_param
   | Non_value of
-      {vloc : value_loc; typ : type_expr; err : Type_layout.Violation.t}
+      {vloc : value_loc; typ : type_expr; err : Layout.Violation.t}
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -984,7 +984,7 @@ let report_error env ppf = function
       | Object_field -> "Object field"
     in
     fprintf ppf "@[%s types must have layout value.@ \ %a@]"
-      s (Type_layout.Violation.report_with_offender
+      s (Layout.Violation.report_with_offender
            ~offender:(fun ppf -> Printtyp.type_expr ppf typ)) err
 
 let () =

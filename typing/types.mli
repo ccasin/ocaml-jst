@@ -75,6 +75,9 @@ module Layout : sig
       [Any] and sublayouts of other sorts, such as [Immediate]. *)
   type t
 
+  (******************************)
+  (* constants *)
+
   (** Constant layouts are used both for user-written annotations and within
       the type checker when we know a layout has no variables *)
   type const = Builtin_attributes.const_layout =
@@ -83,8 +86,8 @@ module Layout : sig
     | Void
     | Immediate64
     | Immediate
-
   val string_of_const : const -> string
+  val equal_const : const -> const -> bool
 
   (** This layout is the top of the layout lattice. All types have layout [any].
       But we cannot compile run-time manipulations of values of types with layout
@@ -104,13 +107,23 @@ module Layout : sig
   (** We know for sure that values of types of this layout are always immediate *)
   val immediate : t
 
+  (******************************)
+  (* construction *)
+
   (** Create a fresh sort variable, packed into a layout. *)
   val of_new_sort_var : unit -> t
 
-  val of_sort : Sort.t -> t
-
-  (** Convert a [const] to a [Layout.t]. *)
+  val of_sort : sort -> t
   val of_const : const -> t
+
+  (** Translate a user layout annotation to a layout *)
+  val of_const_option : Builtin_attributes.const_layout option -> default:t -> t
+
+  (** Find a layout in attributes, defaulting to ~default *)
+  val of_attributes : default:t -> Parsetree.attributes -> t
+
+  (******************************)
+  (* elimination *)
 
   type desc =
     | Const of const
@@ -123,15 +136,61 @@ module Layout : sig
 
   val of_desc : desc -> t
 
-  (** Like [get], but defaults the layout if it is undetermined. *)
-  val get_defaulting : default:Sort.const -> t -> const
+  (** Returns the sort corresponding to the layout.  Call only on representable
+      layouts - errors on Any. *)
+  val sort_of_layout : t -> sort
 
-  val equal_const : const -> const -> bool
+  (*********************************)
+  (* pretty printing *)
+
+  val to_string : t -> string
+  val format : Format.formatter -> t -> unit
+
+  (******************************)
+  (* errors *)
+  module Violation : sig
+    type nonrec t =
+      | Not_a_sublayout of t * t
+      | No_intersection of t * t
+
+    val report_with_offender :
+      offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
+    val report_with_offender_sort :
+      offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
+    val report_with_name : name:string -> Format.formatter -> t -> unit
+  end
+
+  (******************************)
+  (* relations *)
 
   (** This checks for equality, and sets any variables to make two layouts
       equal, if possible. e.g. [equate] on a var and [value] will set the
       variable to be [value] *)
   val equate : t -> t -> bool
+
+  (** Finds the intersection of two layouts, or returns a [Violation.t]
+      if an intersection does not exist. *)
+  val intersection : t -> t -> (t, Violation.t) Result.t
+
+  (** [sub t1 t2] returns [Ok t1] iff [t1] is a sublayout of
+    of [t2].  The current hierarchy is:
+
+    Any > Sort Value > Immediate64 > Immediate
+    Any > Sort Void
+
+    Return [Error _] if the coercion is not possible. We return a layout in the
+    success case because it sometimes saves time / is convenient to have the
+    same return type as intersection. *)
+  val sub : t -> t -> (t, Violation.t) result
+
+  (*********************************)
+  (* defaulting *)
+  val constrain_default_void : t -> const
+  val can_make_void : t -> bool
+  (* CJC XXX at the moment we default to void whenever we can.  But perhaps it
+     would be better to default to value before we actually ship. *)
+
+  val default_to_value : t -> unit
 end
 
 type layout = Layout.t
@@ -677,6 +736,10 @@ val kind_abstract_value : ('a,'b) type_kind
 val kind_abstract_immediate : ('a,'b) type_kind
 val kind_abstract_any : ('a,'b) type_kind
 val decl_is_abstract : type_declaration -> bool
+
+(** Type kinds provide an upper bound on layouts of a type (which is precise if
+    the type has no manifest). *)
+val layout_bound_of_kind : ('a,'b) type_kind -> layout
 
 (* Returns the inner type, if unboxed. *)
 val decl_is_unboxed : type_declaration -> type_expr option
