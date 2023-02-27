@@ -28,6 +28,7 @@ open Debuginfo.Scoped_location
 type error =
     Free_super_var
   | Unreachable_reached
+  | Bad_probe_layout of Ident.t
 
 exception Error of Location.t * error
 
@@ -1026,6 +1027,32 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
           Ident.Map.empty
       in
       let arg_idents, param_idents = Ident.Map.bindings map |> List.split in
+      List.iter (fun id ->
+        (* XXX layouts: Temporary hack.  When we merge with middle-end support
+           for layouts, the lambda translation needs to be able to figure out
+           the layouts of all function parameters.  Here we're building a
+           function whose arguments are all the free variables in a probe
+           handler.  To deal with this, we're simply requiring all their types
+           to have layout value.
+
+           It's really hacky to be doing this kind of layout check this late.
+           The middle-end folks have plans to eliminate the need for it by
+           reworking the way probes are compiled.  For that reason, I haven't
+           bothered to give a particularly good error or handle the Not_found
+           case from env.
+
+           (We could probably calculate the layouts of these variables here
+           rather than requiring them all to be value, but that would be even
+           more hacky, and in any event can't doesn't make sense until we merge
+           with the middle-end support).  *)
+        let {val_type; _} = Env.find_value (Pident id) e.exp_env in
+        match
+          Ctype.check_type_layout e.exp_env (Ctype.correct_levels val_type)
+            Types.Layout.value
+        with
+        | Ok _ -> ()
+        | Error _ -> raise (Error (e.exp_loc, Bad_probe_layout id))
+      ) arg_idents;
       let body = Lambda.rename map lam in
       let attr =
         { inline = Never_inline;
@@ -1857,6 +1884,9 @@ let report_error ppf = function
         "Ancestor names can only be used to select inherited methods"
   | Unreachable_reached ->
       fprintf ppf "Unreachable expression was reached"
+  | Bad_probe_layout id ->
+      fprintf ppf "Variables in probe handlers must have layout value, \
+                   but %s in this handler does not." (Ident.name id)
 
 let () =
   Location.register_error_of_exn

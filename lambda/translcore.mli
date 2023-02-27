@@ -51,6 +51,7 @@ val transl_alloc_mode : Types.alloc_mode -> Lambda.alloc_mode
 type error =
     Free_super_var
   | Unreachable_reached
+  | Bad_probe_layout of Ident.t
 
 exception Error of Location.t * error
 
