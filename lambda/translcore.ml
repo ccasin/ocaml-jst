@@ -344,41 +344,15 @@ let can_apply_primitive p pmode pos args =
 let fun_arg_value_kind pat =
   value_kind pat.pat_env pat.pat_type
 
-(* At the moment, we're translating "void" things to lambda with a little trick:
-   We don't return a dummy value, like unit, from void expressions.  Instead,
-   they jump to a continuation via Lstaticraise.  [transl_exp] checks whether
-   the thing it's about to evaluate is a void and sets up a handler
-   (Lstaticcatch) for this throw if so.
-
-   Many translation functions take an argument (void_k : int option) argument.
-   This represents a continuation to be used if the thing being translated is
-   void.  The int is the name of a static exception handler that they will raise
-   to in that case.  [void_k] must be [Some] iff the thing being translated is
-   void.
-
-   Annnoyingly, the lambda syntax has [value_kinds] in several places - mainly
-   control flow join points - that are inconvenient for this trick.  E.g.,:
-
-   | Lifthenelse of lambda * lambda * lambda * value_kind
-
-   Here the value_kind is for the result of the ite.  That result can have a
-   type whose layout is void, in which case there is no actual runtime value.
-   In that case, each branch will Lstaticraise after running the relevant
-   computation, so the value_kind is irrelevant - we never actually return a
-   value.  We use [Pintval] in those cases.
-
-   In the future, we'll add another type that tracks runtime layouts more fully,
-   where [value_kind] just appears in the value case.  But that requires more
-   reworks in the middle end, so we're using this Lstaticraise/Lstaticcatch
-   trick for now. *)
+(* See comment on [void_continuation] in lambda.mli *)
 let value_kind_if_not_void e void_k =
   match void_k with
-  | None -> Typeopt.value_kind e.exp_env e.exp_type
-  | Some _ -> Pintval
+  | Not_void -> Typeopt.value_kind e.exp_env e.exp_type
+  | Void_cont _ -> Pintval
 
 let catch_void body after kind =
   let static_exception_id = next_raise_count () in
-  Lstaticcatch (body (Some static_exception_id),
+  Lstaticcatch (body (Void_cont static_exception_id),
                 (static_exception_id, []),
                 after,
                 kind)
@@ -386,7 +360,8 @@ let catch_void body after kind =
 (* Translates lists of expressions, which must have at least one non-void
    element.  The resulting list has an element for each non-void element of the
    input.  Computations corresponding to the void elements are attached to the
-   non-void elements in a way that preserves evaluation order.
+   non-void elements in a way that preserves evaluation order.  The input
+   [expr_list] should be in reverse evaluation order.
 
    This is generalized to support using it on both lists of expressions and
    lists of record fields.  So it takes an ['a list] and some functions to
@@ -394,7 +369,7 @@ let catch_void body after kind =
 
    is_void : 'a -> bool
    value_kind : 'a -> value_kind    (will only be called if not is_void)
-   transl : 'a -> int option -> Lambda.t
+   transl : 'a -> void_continuation -> Lambda.t
 
 *)
 let transl_list_with_voids ~is_void ~value_kind ~transl expr_list =
@@ -404,12 +379,12 @@ let transl_list_with_voids ~is_void ~value_kind ~transl expr_list =
     let transl_with_voids_after e after =
       let kind = value_kind e in
       match after with
-      | [] -> (kind, transl None e)
+      | [] -> (kind, transl Not_void e)
       | _ ->
         let result_var = Ident.create_local "after_voids" in
         (kind,
          Llet (Strict, kind, result_var,
-               transl None e,
+               transl Not_void e,
                List.fold_left (fun lam e ->
                  catch_void (fun void_k -> transl void_k e) lam kind)
                  (Lvar result_var) after))
@@ -426,28 +401,39 @@ let transl_list_with_voids ~is_void ~value_kind ~transl expr_list =
     (* We need to group the voids with an element before them or the element
        after them.  We prefer to do them as part of an element after them in
        eval order, because doing them "before" an element is free while the
-       alternative adds a let binding. *)
-    let rec get_afters idx afters = function
+       alternative adds a let binding.
+
+       This produces a list of triples
+          (before, e, after) : 'a list * 'a * 'a list
+       where the sublists are void things to be evaluated before or after e.
+       The list and the sublists are all in reverse evaluation order. *)
+    let rec get_afters afters = function
       | e :: exprs when is_void e ->
-        get_afters (idx + 1) (e :: afters) exprs
-      | exprs -> (idx,exprs,afters)
+        get_afters (e :: afters) exprs
+      | exprs -> (exprs,afters)
     in
-    let rec group idx befores nonvoid afters acc exprs =
+    let rec group befores nonvoid afters acc exprs =
       match exprs with
       | [] -> (List.rev befores,nonvoid, List.rev afters) :: acc
       | e :: exprs when is_void e ->
-        group (idx+1) (e :: befores) nonvoid afters acc exprs
+        group (e :: befores) nonvoid afters acc exprs
       | e :: exprs ->
-        group (idx+1) [] e []
-          ((List.rev befores,nonvoid,List.rev afters) :: acc) exprs
+        group [] e []
+          ((List.rev befores, nonvoid, List.rev afters) :: acc) exprs
     in
-    let (idx,exprs,afters) = get_afters 0 [] exprs in
+    let (exprs,afters) = get_afters [] exprs in
     let (first_non_void,exprs) = match exprs with
       | [] -> assert false
       | (e :: exprs) -> e,exprs
     in
-    List.rev (group (idx+1) [] first_non_void afters [] exprs)
+    List.rev (group [] first_non_void afters [] exprs)
   in
+  (* Two steps:
+     1) First find the void things and group them with a non-void element
+        before or after them, creating a list with one element for each
+        non-void input.
+     2) Translate that list, attaching the voids to the non-void they are
+        grouped with.  *)
   let grouped = group_voids expr_list in
   List.split (List.map transl_with_voids_before_and_after grouped)
 
@@ -469,16 +455,14 @@ and transl_exp1 ~scopes ~in_new_scope void_k e =
   if eval_once then transl_exp0 ~scopes ~in_new_scope void_k e else
   Translobj.oo_wrap e.exp_env true (transl_exp0 ~scopes ~in_new_scope void_k) e
 
-(* [void_k] is [Some n] iff [e] has layout void, where [n] is a static handler
-   address - see the comment on [value_kind_if_not_void]. *)
 and transl_exp0 ~in_new_scope ~scopes void_k e =
   match e.exp_desc with
   | Texp_ident(path, _, desc, kind) -> begin
       match void_k with
-      | None ->
+      | Not_void ->
         transl_ident (of_location ~scopes e.exp_loc)
           e.exp_env e.exp_type path desc kind
-      | Some n -> Lstaticraise (n,[])
+      | Void_cont n -> Lstaticraise (n,[])
         (* CR ccasinghino: might we ever have, e.g., a void primitive for which
            we want to do something interesting here? *)
     end
@@ -536,7 +520,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       let mode = transl_exp_mode e in
       event_after ~scopes e
         (transl_apply ~scopes ~tailcall ~inlined ~specialised
-           ~position ~mode (transl_exp ~scopes None funct)
+           ~position ~mode (transl_exp ~scopes Not_void funct)
            oargs (of_location ~scopes e.exp_loc))
   | Texp_match(arg, sort, pat_expr_list, partial) ->
       transl_match ~scopes e arg sort pat_expr_list partial void_k
@@ -615,7 +599,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       begin match arg with
         None -> Lconst(const_int tag)
       | Some arg ->
-          let lam = transl_exp ~scopes None arg in
+          let lam = transl_exp ~scopes Not_void arg in
           try
             Lconst(Const_block(0, [const_int tag;
                                    extract_constant lam]))
@@ -632,7 +616,8 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
         fields representation extended_expression
   | Texp_field(arg, _, lbl) -> begin
       match lbl.lbl_repres, void_k with
-      | ((Record_unboxed l | Record_inlined (_, Variant_unboxed l)), Some n)
+      | ((Record_unboxed l | Record_inlined (_, Variant_unboxed l)),
+         Void_cont n)
         when is_void_layout l ->
           (* Special case for projecting from records like
              type t = { t : some_void_type } [@@unboxed]
@@ -640,10 +625,10 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
           catch_void (fun void_k -> transl_exp ~scopes void_k arg)
             (Lstaticraise (n,[])) Pintval
       | _ -> begin
-        let targ = transl_exp ~scopes None arg in
+        let targ = transl_exp ~scopes Not_void arg in
         match void_k with
-        | Some n -> Lsequence (targ, Lstaticraise (n, []))
-        | None -> begin
+        | Void_cont n -> Lsequence (targ, Lstaticraise (n, []))
+        | Not_void -> begin
           let sem =
             match lbl.lbl_mut with
             | Immutable -> Reads_agree
@@ -667,7 +652,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
   | Texp_setfield(arg, _, lbl, newval) -> begin
       if lbl.lbl_pos = lbl_pos_void then
         let transl_newval void_k = transl_exp ~scopes void_k newval in
-        let arg = transl_exp ~scopes None arg in
+        let arg = transl_exp ~scopes Not_void arg in
         catch_void transl_newval (Lsequence (arg, lambda_unit)) Pintval
       else
         let mode =
@@ -686,7 +671,8 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
             Psetfield (lbl.lbl_pos + 1, maybe_pointer newval, mode)
         in
         Lprim(access,
-              [transl_exp ~scopes None arg; transl_exp ~scopes None newval],
+              [transl_exp ~scopes Not_void arg;
+               transl_exp ~scopes Not_void newval],
               of_location ~scopes e.exp_loc)
     end
   | Texp_array expr_list ->
@@ -747,12 +733,12 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       end
   | Texp_ifthenelse(cond, ifso, Some ifnot) ->
       let k = value_kind_if_not_void e void_k in
-      Lifthenelse(transl_exp ~scopes None cond,
+      Lifthenelse(transl_exp ~scopes Not_void cond,
                   event_before ~scopes ifso (transl_exp ~scopes void_k ifso),
                   event_before ~scopes ifnot (transl_exp ~scopes void_k ifnot),
                   k)
   | Texp_ifthenelse(cond, ifso, None) ->
-      Lifthenelse(transl_exp ~scopes None cond,
+      Lifthenelse(transl_exp ~scopes Not_void cond,
                   event_before ~scopes ifso (transl_exp ~scopes void_k ifso),
                   lambda_unit,
                   Pintval (* unit *))
@@ -765,20 +751,20 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
              (transl_exp ~scopes void_k expr2))
           kind2
       else
-        Lsequence(transl_exp ~scopes None expr1,
+        Lsequence(transl_exp ~scopes Not_void expr1,
                   event_before ~scopes expr2 (transl_exp ~scopes void_k expr2))
   | Texp_while {wh_cond; wh_cond_region;
                 wh_body; wh_body_region; wh_body_layout} ->
       (* CR ccasinghino: Perhaps some cleverer encoding for void bodies is
          available, that doesn't use Lwhile and instead staticthrows right back
          to the condition. *)
-      let cond = transl_exp ~scopes None wh_cond in
+      let cond = transl_exp ~scopes Not_void wh_cond in
       let body =
         if is_void_layout wh_body_layout then
           catch_void (fun void_k -> transl_exp ~scopes void_k wh_body)
             lambda_unit Pintval
         else
-          transl_exp ~scopes None wh_body
+          transl_exp ~scopes Not_void wh_body
       in
       Lwhile {
         wh_cond = if wh_cond_region then maybe_region cond else cond;
@@ -794,13 +780,13 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
     let loc = of_location ~scopes e.exp_loc in
     let array_kind = Typeopt.array_kind e in
     Translcomprehension.transl_arr_comprehension
-      body blocks ~array_kind ~scopes ~loc ~transl_exp:(transl_exp None)
+      body blocks ~array_kind ~scopes ~loc ~transl_exp:(transl_exp Not_void)
   | Texp_list_comprehension (body, blocks) ->
     (* CJC XXX (transl_exp None) below to be sorted out when we merge with the
        new comprehensions system *)
     let loc = of_location ~scopes e.exp_loc in
     Translcomprehension.transl_list_comprehension
-      body blocks ~scopes ~loc ~transl_exp:(transl_exp None)
+      body blocks ~scopes ~loc ~transl_exp:(transl_exp Not_void)
   | Texp_for {for_id; for_from; for_to; for_dir; for_body; for_body_layout;
               for_region} ->
       let body =
@@ -808,12 +794,12 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
           catch_void (fun void_k -> transl_exp ~scopes void_k for_body)
             lambda_unit Pintval
         else
-          transl_exp ~scopes None for_body
+          transl_exp ~scopes Not_void for_body
       in
       Lfor {
         for_id;
-        for_from = transl_exp ~scopes None for_from;
-        for_to = transl_exp ~scopes None for_to;
+        for_from = transl_exp ~scopes Not_void for_from;
+        for_to = transl_exp ~scopes Not_void for_to;
         for_dir;
         for_body = event_before ~scopes for_body
                      (if for_region then maybe_region body else body);
@@ -826,10 +812,10 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
         let loc = of_location ~scopes e.exp_loc in
         match met with
         | Tmeth_val id ->
-            let obj = transl_exp ~scopes None expr in
+            let obj = transl_exp ~scopes Not_void expr in
             Lsend (Self, Lvar id, obj, [], pos, mode, loc)
         | Tmeth_name nm ->
-            let obj = transl_exp ~scopes None expr in
+            let obj = transl_exp ~scopes Not_void expr in
             let (tag, cache) = Translobj.meth obj nm in
             let kind = if cache = [] then Public else Cached in
             Lsend (kind, tag, obj, cache, pos, mode, loc)
@@ -925,7 +911,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       then lambda_unit
       else begin
         Lifthenelse
-          (transl_exp ~scopes None cond,
+          (transl_exp ~scopes Not_void cond,
            lambda_unit,
            assert_failed ~scopes e,
            Pintval (* unit *))
@@ -939,14 +925,14 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       | `Constant_or_function ->
         (* A constant expr (of type <> float if [Config.flat_float_array] is
            true) gets compiled as itself. *)
-         transl_exp ~scopes None e
+         transl_exp ~scopes Not_void e
       | `Float_that_cannot_be_shortcut ->
           (* We don't need to wrap with Popaque: this forward
              block will never be shortcutted since it points to a float
              and Config.flat_float_array is true. *)
          Lprim(Pmakeblock(Obj.forward_tag, Immutable, None,
                           alloc_heap),
-                [transl_exp ~scopes None e], of_location ~scopes e.exp_loc)
+                [transl_exp ~scopes Not_void e], of_location ~scopes e.exp_loc)
       | `Identifier `Forward_value ->
          (* CR-someday mshinwell: Consider adding a new primitive
             that expresses the construction of forward_tag blocks.
@@ -957,11 +943,11 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
          Lprim (Popaque,
                 [Lprim(Pmakeblock(Obj.forward_tag, Immutable, None,
                                   alloc_heap),
-                       [transl_exp ~scopes None e],
+                       [transl_exp ~scopes Not_void e],
                        of_location ~scopes e.exp_loc)],
                 of_location ~scopes e.exp_loc)
       | `Identifier `Other ->
-         transl_exp ~scopes None e
+         transl_exp ~scopes Not_void e
       | `Other ->
          (* other cases compile to a lazy block holding a function *)
          let scopes = enter_lazy ~scopes in
@@ -972,7 +958,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
                             ~loc:(of_location ~scopes e.exp_loc)
                             ~mode:alloc_heap
                             ~region:true
-                            ~body:(maybe_region (transl_exp ~scopes None e))
+                            ~body:(maybe_region (transl_exp ~scopes Not_void e))
          in
           Lprim(Pmakeblock(Config.lazy_tag, Mutable, None, alloc_heap), [fn],
                 of_location ~scopes e.exp_loc)
@@ -1020,7 +1006,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       end
   | Texp_probe {name; handler=exp} ->
     if !Clflags.native_code && !Clflags.probes then begin
-      let lam = transl_exp ~scopes None exp in
+      let lam = transl_exp ~scopes Not_void exp in
       let map =
         Ident.Set.fold (fun v acc -> Ident.Map.add v (Ident.rename v) acc)
           (free_variables lam)
@@ -1119,7 +1105,7 @@ and pure_module m =
 
 (* list elements must be non-void *)
 and transl_list ~scopes expr_list =
-  List.map (transl_exp ~scopes None) expr_list
+  List.map (transl_exp ~scopes Not_void) expr_list
 
 and transl_guard ~scopes void_k guard rhs =
   let kind = value_kind_if_not_void rhs void_k in
@@ -1128,7 +1114,7 @@ and transl_guard ~scopes void_k guard rhs =
   | None -> expr
   | Some cond ->
       event_before ~scopes cond
-        (Lifthenelse(transl_exp ~scopes None cond, expr, staticfail, kind))
+        (Lifthenelse(transl_exp ~scopes Not_void cond, expr, staticfail, kind))
 
 and transl_case ~scopes void_k {c_lhs; c_guard; c_rhs} =
   c_lhs, transl_guard ~scopes void_k c_guard c_rhs
@@ -1158,7 +1144,7 @@ and transl_tupled_cases ~scopes patl_expr_list =
      void continuation (the None to transl_guard).  Will change when function
      may return void. *)
   List.map (fun (patl, guard, expr) ->
-    (patl, transl_guard ~scopes None guard expr))
+    (patl, transl_guard ~scopes Not_void guard expr))
     patl_expr_list
 
 and transl_apply ~scopes
@@ -1262,7 +1248,7 @@ and transl_apply ~scopes
       (fun (_, arg) ->
          match arg with
          | Omitted _ as arg -> arg
-         | Arg exp -> Arg (transl_exp ~scopes None exp))
+         | Arg exp -> Arg (transl_exp ~scopes Not_void exp))
       sargs
   in
   build_apply lam [] loc position mode args
@@ -1397,7 +1383,7 @@ and transl_function0
     in
     let body =
       Matching.for_function ~scopes return loc repr (Lvar param)
-        (transl_cases ~scopes None cases) partial
+        (transl_cases ~scopes Not_void cases) partial
     in
     let region = region || not (may_allocate_in_region body) in
     let nlocal =
@@ -1456,8 +1442,8 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
       | {vb_pat=pat; vb_expr=expr; vb_sort=sort; vb_attributes=attr; vb_loc}
         :: rem ->
           let param_void_k =
-            if is_void_sort sort then Some (next_raise_count ())
-            else None
+            if is_void_sort sort then Void_cont (next_raise_count ())
+            else Not_void
           in
           let lam =
             transl_bound_exp ~scopes ~in_structure param_void_k pat expr
@@ -1480,7 +1466,8 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
       let transl_case {vb_expr=expr; vb_sort; vb_attributes; vb_loc; vb_pat}
             id =
         let bound_void_k =
-          if is_void_sort vb_sort then Some (next_raise_count ()) else None
+          if is_void_sort vb_sort then Void_cont (next_raise_count ())
+          else Not_void
         in
         let lam =
           transl_bound_exp ~scopes ~in_structure bound_void_k vb_pat expr
@@ -1500,7 +1487,7 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
 
 and transl_setinstvar ~scopes loc self var expr =
   Lprim(Psetfield_computed (maybe_pointer expr, Assignment alloc_heap),
-    [self; var; transl_exp ~scopes None expr], loc)
+    [self; var; transl_exp ~scopes Not_void expr], loc)
 
 and transl_record ~scopes void_k kind loc env mode fields repres opt_init_expr =
   let size = Array.length fields in
@@ -1535,11 +1522,11 @@ and transl_record ~scopes void_k kind loc env mode fields repres opt_init_expr =
       let transl void_k (lbl, definition) =
         match definition, void_k with
         | Overridden (_, expr), _ -> transl_exp ~scopes void_k expr
-        | Kept _, Some n -> Lstaticraise (n, [])
+        | Kept _, Void_cont n -> Lstaticraise (n, [])
           (* CR ccasinghino - we could put an optimization in
              [transl_list_with_voids] that omits the Lstaticraise and catch in
              this case. *)
-        | Kept _, None ->
+        | Kept _, Not_void->
           let sem =
             match lbl.lbl_mut with
             | Immutable -> Reads_agree
@@ -1604,7 +1591,7 @@ and transl_record ~scopes void_k kind loc env mode fields repres opt_init_expr =
     begin match opt_init_expr with
       None -> lam
     | Some init_expr -> Llet(Strict, Pgenval, init_id,
-                             transl_exp ~scopes None init_expr, lam)
+                             transl_exp ~scopes Not_void init_expr, lam)
     end
     end
   | _ -> begin
@@ -1631,7 +1618,7 @@ and transl_record ~scopes void_k kind loc env mode fields repres opt_init_expr =
                 let ptr = maybe_pointer expr in
                 Psetfield(pos, ptr, Assignment alloc_heap)
           in
-          Lsequence(Lprim(upd, [Lvar copy_id; transl_exp ~scopes None expr],
+          Lsequence(Lprim(upd, [Lvar copy_id; transl_exp ~scopes Not_void expr],
                           of_location ~scopes loc),
                     cont)
     in
@@ -1640,7 +1627,8 @@ and transl_record ~scopes void_k kind loc env mode fields repres opt_init_expr =
     | Some init_expr ->
         assert (is_heap_mode mode); (* Pduprecord must be Alloc_heap *)
         Llet(Strict, Pgenval, copy_id,
-             Lprim(Pduprecord (repres, size), [transl_exp ~scopes None init_expr],
+             Lprim(Pduprecord (repres, size),
+                   [transl_exp ~scopes Not_void init_expr],
                    of_location ~scopes loc),
              Array.fold_left update_field (Lvar copy_id) fields)
     end
@@ -1786,11 +1774,11 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
       | arg, [] ->
         assert (static_handlers = []);
         Matching.for_function ~scopes kind e.exp_loc
-          None (transl_exp ~scopes None arg) val_cases partial
+          None (transl_exp ~scopes Not_void arg) val_cases partial
       | arg, _ :: _ ->
           let val_id = Typecore.name_pattern "val" (List.map fst val_cases) in
           let k = Typeopt.value_kind arg.exp_env arg.exp_type in
-          static_catch [transl_exp ~scopes None arg] [val_id, k]
+          static_catch [transl_exp ~scopes Not_void arg] [val_id, k]
             (Matching.for_function ~scopes kind e.exp_loc
                None (Lvar val_id) val_cases partial)
   in
@@ -1808,7 +1796,7 @@ and transl_letop ~scopes loc env let_ ands param case partial warnings =
           transl_ident (of_location ~scopes and_.bop_op_name.loc) env
             and_.bop_op_type and_.bop_op_path and_.bop_op_val Id_value
         in
-        let exp = transl_exp ~scopes None and_.bop_exp in
+        let exp = transl_exp ~scopes Not_void and_.bop_exp in
         let lam =
           bind Strict right_id exp
             (Lapply{
@@ -1829,7 +1817,7 @@ and transl_letop ~scopes loc env let_ ands param case partial warnings =
     transl_ident (of_location ~scopes let_.bop_op_name.loc) env
       let_.bop_op_type let_.bop_op_path let_.bop_op_val Id_value
   in
-  let exp = loop (transl_exp ~scopes None let_.bop_exp) ands in
+  let exp = loop (transl_exp ~scopes Not_void let_.bop_exp) ands in
   let func =
     let return_kind = value_kind case.c_rhs.exp_env case.c_rhs.exp_type in
     let curry = More_args { partial_mode = Alloc_mode.global } in

@@ -672,8 +672,7 @@ and type_decl_kind = (label_declaration, constructor_declaration) type_kind
 and ('lbl, 'cstr) type_kind =
     Type_abstract of {layout : layout}
   (* The layout here is authoritative if the manifest is [None].  Otherwise,
-     it's an upper bound; it may be necessary to look at the manifest for the
-     most precise layout. *)
+     it's an upper bound; look at the manifest for the most precise layout. *)
   | Type_record of 'lbl list  * record_representation
   | Type_variant of 'cstr list * variant_representation
   | Type_open
@@ -688,7 +687,7 @@ and record_representation =
   (* For an inlined record, we record the representation of the variant that
      contains it and the tag of the relevant constructor of that variant. *)
   | Record_boxed of layout array
-  | Record_float
+  | Record_float (* All fields are floats *)
 
 
 (* For unboxed variants, we record the layout of the mandatory single argument.
@@ -899,7 +898,11 @@ type label_description =
   }
 
 (** The special value we assign to lbl_pos for label descriptions corresponding
-    to void types, because they can't sensibly be projected. *)
+    to void types, because they can't sensibly be projected.
+
+    CR-someday layouts: This should be removed once we have unarization, as it
+    will be up to a later stage of the compiler to erase void.
+*)
 val lbl_pos_void : int
 
 (** Extracts the list of "value" identifiers bound by a signature.
