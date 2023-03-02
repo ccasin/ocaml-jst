@@ -463,8 +463,6 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
         transl_ident (of_location ~scopes e.exp_loc)
           e.exp_env e.exp_type path desc kind
       | Void_cont n -> Lstaticraise (n,[])
-        (* CR ccasinghino: might we ever have, e.g., a void primitive for which
-           we want to do something interesting here? *)
     end
   | Texp_constant cst ->
       Lconst(Const_base cst)
@@ -615,15 +613,13 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
         (transl_exp_mode e)
         fields representation extended_expression
   | Texp_field(arg, _, lbl) -> begin
-      match lbl.lbl_repres, void_k with
-      | ((Record_unboxed l | Record_inlined (_, Variant_unboxed l)),
-         Void_cont n)
+      match lbl.lbl_repres with
+      | ((Record_unboxed l | Record_inlined (_, Variant_unboxed l)))
         when is_void_layout l ->
           (* Special case for projecting from records like
              type t = { t : some_void_type } [@@unboxed]
           *)
-          catch_void (fun void_k -> transl_exp ~scopes void_k arg)
-            (Lstaticraise (n,[])) Pintval
+          transl_exp ~scopes void_k arg
       | _ -> begin
         let targ = transl_exp ~scopes Not_void arg in
         match void_k with
