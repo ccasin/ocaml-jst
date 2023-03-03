@@ -870,6 +870,7 @@ type constructor_description =
     cstr_loc: Location.t;
     cstr_attributes: Parsetree.attributes;
     cstr_inlined: type_declaration option;
+      (* [Some decl] here iff the cstr has an inline record (which is decl) *)
     cstr_uid: Uid.t;
    }
 

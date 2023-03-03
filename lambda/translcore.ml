@@ -438,6 +438,10 @@ let transl_list_with_voids ~is_void ~value_kind ~transl expr_list =
   List.split (List.map transl_with_voids_before_and_after grouped)
 
 let rec transl_exp ~scopes void_k e =
+  (* CR layouts v1: consider this place for a sanity checking assert about e's
+     layout and void_k as part of the checks we want for v0.  (might be too
+     expensive, this late)
+  *)
   transl_exp1 ~scopes ~in_new_scope:false void_k e
 
 (* ~in_new_scope tracks whether we just opened a new scope.
@@ -740,7 +744,6 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
                   Pintval (* unit *))
   | Texp_sequence(expr1, layout, expr2) ->
       if is_void_layout layout then
-        (* CR ccasinghino: Could we play a similar game for layout "any"? *)
         let kind2 = value_kind_if_not_void expr2 void_k in
         catch_void (fun void_k -> transl_exp ~scopes void_k expr1)
           (event_before ~scopes expr2
@@ -945,7 +948,8 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       | `Identifier `Other ->
          transl_exp ~scopes Not_void e
       | `Other ->
-         (* other cases compile to a lazy block holding a function *)
+         (* other cases compile to a lazy block holding a function.  The
+            typechecker enforces that e has layout value.  *)
          let scopes = enter_lazy ~scopes in
          let fn = lfunction ~kind:(Curried {nlocal=0})
                             ~params:[Ident.create_local "param", Pgenval]
@@ -1137,8 +1141,10 @@ and transl_tupled_cases ~scopes patl_expr_list =
     List.filter (fun (_,_,e) -> e.exp_desc <> Texp_unreachable)
       patl_expr_list in
   (* Because this is used only for function bodies, we can assume there is no
-     void continuation (the None to transl_guard).  Will change when function
-     may return void. *)
+     void continuation (the Not_void to transl_guard).
+
+     CR layouts: Will change when functions may return void, if that happens
+     before unarization. *)
   List.map (fun (patl, guard, expr) ->
     (patl, transl_guard ~scopes Not_void guard expr))
     patl_expr_list
@@ -1245,6 +1251,7 @@ and transl_apply ~scopes
          match arg with
          | Omitted _ as arg -> arg
          | Arg exp -> Arg (transl_exp ~scopes Not_void exp))
+      (* CR layouts v2: Not_void above to change when non-value args allowed. *)
       sargs
   in
   build_apply lam [] loc position mode args
@@ -1380,6 +1387,7 @@ and transl_function0
     let body =
       Matching.for_function ~scopes return loc repr (Lvar param)
         (transl_cases ~scopes Not_void cases) partial
+      (* CR layouts v2: Not_void above to change when non-value bodies added. *)
     in
     let region = region || not (may_allocate_in_region body) in
     let nlocal =
@@ -1783,6 +1791,10 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
   ) lam_match static_handlers
 
 and transl_letop ~scopes loc env let_ ands param case partial warnings =
+  (* CR-someday layouts: The typechecker is currently enforcing that everything
+     here has layout value, but we might want to relax that when we allow
+     non-value function args and returns, and then this code would need to be
+     revisited. *)
   let rec loop prev_lam = function
     | [] -> prev_lam
     | and_ :: rest ->
