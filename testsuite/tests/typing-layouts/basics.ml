@@ -93,7 +93,7 @@ Line 4, characters 35-41:
 4 |   type 'a s = 'a -> int constraint 'a = t
                                        ^^^^^^
 Error: The type constraints are not consistent.
-       Type 'a is not compatible with type t
+       Type ('a : value) is not compatible with type t
        t has layout void, which is not a sublayout of value.
 |}]
 
@@ -107,7 +107,7 @@ Line 2, characters 13-16:
 2 |   let f () = X.x
                  ^^^
 Error: This expression has type t_void but an expression was expected of type
-         'a
+         ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -118,8 +118,8 @@ end;;
 Line 2, characters 28-29:
 2 |   let g z = X.f { vr_void = z; vr_int = 42 }
                                 ^
-Error: This expression has type 'a but an expression was expected of type
-         t_void
+Error: This expression has type ('a : value)
+       but an expression was expected of type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -157,7 +157,7 @@ let string_id (x : string imm_id) = x;;
 Line 1, characters 19-25:
 1 | let string_id (x : string imm_id) = x;;
                        ^^^^^^
-Error: This type string should be an instance of type 'a
+Error: This type string should be an instance of type ('a : immediate)
        string has layout value, which is not a sublayout of immediate.
 |}];;
 
@@ -177,7 +177,7 @@ Line 1, characters 33-46:
 1 | let not_helloworld = id_for_imms "hello world";;
                                      ^^^^^^^^^^^^^
 Error: This expression has type string but an expression was expected of type
-         'a imm_id = 'a
+         'a imm_id = ('a : immediate)
        string has layout value, which is not a sublayout of immediate.
 |}]
 
@@ -190,7 +190,7 @@ and s4 = string t4;;
 Line 2, characters 9-15:
 2 | and s4 = string t4;;
              ^^^^^^
-Error: This type string should be an instance of type 'a
+Error: This type string should be an instance of type ('a : immediate)
        string has layout value, which is not a sublayout of immediate.
 |}];;
 
@@ -201,7 +201,7 @@ and 'a [@immediate] t4;;
 Line 1, characters 10-16:
 1 | type s4 = string t4
               ^^^^^^
-Error: This type string should be an instance of type 'a
+Error: This type string should be an instance of type ('a : immediate)
        string has layout value, which is not a sublayout of immediate.
 |}]
 
@@ -286,7 +286,7 @@ let h4 (x : int void4) = f4 x
 Line 1, characters 12-15:
 1 | let h4 (x : int void4) = f4 x
                 ^^^
-Error: This type int should be an instance of type 'a
+Error: This type int should be an instance of type ('a : void)
        int has layout immediate, which is not a sublayout of void.
 |}];;
 
@@ -296,10 +296,9 @@ Line 1, characters 31-32:
 1 | let h4' (x : int any4) = Void4 x
                                    ^
 Error: This expression has type int any4
-       but an expression was expected of type 'a
+       but an expression was expected of type ('a : void)
        int any4 has layout value, which is not a sublayout of void.
 |}];;
-(* CJC XXX errors: better errors needed *)
 
 (* disallowed - tries to return void *)
 let g (x : 'a void4) =
@@ -309,13 +308,15 @@ let g (x : 'a void4) =
 Line 3, characters 15-16:
 3 |   | Void4 x -> x;;
                    ^
-Error: This expression has type 'a but an expression was expected of type 'b
+Error: This expression has type ('a : void)
+       but an expression was expected of type ('b : value)
        'a has layout value, which does not overlap with void.
 |}, Principal{|
 Lines 2-3, characters 2-16:
 2 | ..match x with
 3 |   | Void4 x -> x..
-Error: This expression has type 'a but an expression was expected of type 'b
+Error: This expression has type ('a : void)
+       but an expression was expected of type ('b : value)
        'a has layout value, which does not overlap with void.
 |}]
 (* CJC XXX errors: understand what's going on with Principal mode here (and improve
@@ -372,7 +373,7 @@ type 'a t6 = Foo6 of 'a
 Line 3, characters 12-21:
 3 | type t6' = (int * int) t6;;
                 ^^^^^^^^^
-Error: This type int * int should be an instance of type 'a
+Error: This type int * int should be an instance of type ('a : immediate)
        int * int has layout value, which is not a sublayout of immediate.
 |}]
 
@@ -408,8 +409,8 @@ Error: This expression should not be a record, the expected type is result
 Line 8, characters 18-19:
 8 |     | `Bar v -> { v }
                       ^
-Error: This expression has type 'a but an expression was expected of type
-         t_void
+Error: This expression has type ('a : value)
+       but an expression was expected of type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -422,7 +423,7 @@ end;;
 Line 4, characters 13-19:
 4 |   type bad = t_void t
                  ^^^^^^
-Error: This type t_void should be an instance of type 'a
+Error: This type t_void should be an instance of type ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -434,7 +435,7 @@ Line 2, characters 54-78:
 2 |   type 'a t = [ `Foo of 'a | `Baz of int ] constraint 'a = void_unboxed_record
                                                           ^^^^^^^^^^^^^^^^^^^^^^^^
 Error: The type constraints are not consistent.
-       Type 'a is not compatible with type void_unboxed_record
+       Type ('a : value) is not compatible with type void_unboxed_record
        void_unboxed_record has layout void, which is not a sublayout of value.
 |}];;
 
@@ -487,7 +488,7 @@ Line 7, characters 13-14:
 7 |     | V t -> t, 27
                  ^
 Error: This expression has type void_unboxed_record
-       but an expression was expected of type 'a
+       but an expression was expected of type ('a : value)
        void_unboxed_record has layout void, which is not a sublayout of value.
 |}];;
 
@@ -501,7 +502,7 @@ Line 4, characters 8-16:
 4 |     | ({vur_void = _},i) -> i
             ^^^^^^^^
 Error: The record field vur_void belongs to the type void_unboxed_record
-       but is mixed here with fields of type 'a
+       but is mixed here with fields of type ('a : value)
        void_unboxed_record has layout void, which is not a sublayout of value.
 |}];;
 
@@ -514,7 +515,7 @@ end;;
 Line 4, characters 13-19:
 4 |   type bad = t_void t
                  ^^^^^^
-Error: This type t_void should be an instance of type 'a
+Error: This type t_void should be an instance of type ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -526,7 +527,7 @@ Line 2, characters 34-58:
 2 |   type 'a t = int * 'a constraint 'a = void_unboxed_record
                                       ^^^^^^^^^^^^^^^^^^^^^^^^
 Error: The type constraints are not consistent.
-       Type 'a is not compatible with type void_unboxed_record
+       Type ('a : value) is not compatible with type void_unboxed_record
        void_unboxed_record has layout void, which is not a sublayout of value.
 |}];;
 
@@ -553,7 +554,7 @@ Line 5, characters 11-23:
 5 |   match 3, X.vr.vr_void with
                ^^^^^^^^^^^^
 Error: This expression has type t_void but an expression was expected of type
-         'a
+         ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -643,8 +644,8 @@ end;;
 Line 2, characters 17-30:
 2 |   let foo x = VV (x # getvoid)
                      ^^^^^^^^^^^^^
-Error: This expression has type 'a but an expression was expected of type
-         t_void
+Error: This expression has type ('a : value)
+       but an expression was expected of type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -657,7 +658,8 @@ end;;
 Line 4, characters 32-33:
 4 |   let foo o (A x) = o # usevoid x
                                     ^
-Error: This expression has type 'a but an expression was expected of type 'b
+Error: This expression has type ('a : void)
+       but an expression was expected of type ('b : value)
        'a has layout value, which does not overlap with void.
 |}];;
 
@@ -692,10 +694,9 @@ Line 2, characters 36-47:
 2 |   type 'a t = < l : 'a > constraint 'a = t_void
                                         ^^^^^^^^^^^
 Error: The type constraints are not consistent.
-       Type 'a is not compatible with type t_void
+       Type ('a : value) is not compatible with type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
-(* CJC XXX errors *)
 
 (*******************************************************************)
 (* Test 11: class parameters and bound vars must have layout value *)
@@ -758,7 +759,7 @@ end
 Line 6, characters 24-26:
 6 |       val virtual baz : 'a t
                             ^^
-Error: This type 'a should be an instance of type 'a0
+Error: This type ('a : void) should be an instance of type ('a0 : value)
        'a has layout value, which does not overlap with void.
 |}];;
 
@@ -774,7 +775,7 @@ end;;
 Line 6, characters 29-31:
 6 |       method void_id (A a) : 'a t = a
                                  ^^
-Error: This type 'a should be an instance of type 'a0
+Error: This type ('a : void) should be an instance of type ('a0 : value)
        'a has layout value, which does not overlap with void.
 |}];;
 
@@ -791,7 +792,7 @@ end;;
 Line 5, characters 4-6:
 5 |     'a t ->
         ^^
-Error: This type 'a should be an instance of type 'a0
+Error: This type ('a : void) should be an instance of type ('a0 : value)
        'a has layout value, which does not overlap with void.
 |}];;
 
@@ -819,7 +820,7 @@ type t12 = t_void Lazy.t;;
 Line 1, characters 11-17:
 1 | type t12 = t_void Lazy.t;;
                ^^^^^^
-Error: This type t_void should be an instance of type 'a
+Error: This type t_void should be an instance of type ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -829,7 +830,7 @@ Line 1, characters 22-23:
 1 | let x12 (VV v) = lazy v;;
                           ^
 Error: This expression has type t_void but an expression was expected of type
-         'a
+         ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -840,8 +841,8 @@ let x12 v =
 Line 3, characters 17-18:
 3 |   | lazy v -> VV v
                      ^
-Error: This expression has type 'a but an expression was expected of type
-         t_void
+Error: This expression has type ('a : value)
+       but an expression was expected of type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -851,7 +852,7 @@ type t12 = t_void option;;
 Line 1, characters 11-17:
 1 | type t12 = t_void option;;
                ^^^^^^
-Error: This type t_void should be an instance of type 'a
+Error: This type t_void should be an instance of type ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -861,7 +862,7 @@ Line 1, characters 22-23:
 1 | let x12 (VV v) = Some v;;
                           ^
 Error: This expression has type t_void but an expression was expected of type
-         'a
+         ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -873,8 +874,8 @@ let x12 v =
 Line 3, characters 17-18:
 3 |   | Some v -> VV v
                      ^
-Error: This expression has type 'a but an expression was expected of type
-         t_void
+Error: This expression has type ('a : value)
+       but an expression was expected of type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -884,7 +885,7 @@ type t12 = t_void list;;
 Line 1, characters 11-17:
 1 | type t12 = t_void list;;
                ^^^^^^
-Error: This type t_void should be an instance of type 'a
+Error: This type t_void should be an instance of type ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -894,7 +895,7 @@ Line 1, characters 18-19:
 1 | let x12 (VV v) = [v];;
                       ^
 Error: This expression has type t_void but an expression was expected of type
-         'a
+         ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -906,8 +907,8 @@ let x12 v =
 Line 3, characters 14-15:
 3 |   | [v] -> VV v
                   ^
-Error: This expression has type 'a but an expression was expected of type
-         t_void
+Error: This expression has type ('a : value)
+       but an expression was expected of type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -917,7 +918,7 @@ type t12 = t_void array;;
 Line 1, characters 11-17:
 1 | type t12 = t_void array;;
                ^^^^^^
-Error: This type t_void should be an instance of type 'a
+Error: This type t_void should be an instance of type ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -927,7 +928,7 @@ Line 1, characters 20-21:
 1 | let x12 (VV v) = [| v |];;
                         ^
 Error: This expression has type t_void but an expression was expected of type
-         'a
+         ('a : value)
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
@@ -939,8 +940,8 @@ let x12 v =
 Line 3, characters 18-19:
 3 |   | [| v |] -> VV v
                       ^
-Error: This expression has type 'a but an expression was expected of type
-         t_void
+Error: This expression has type ('a : value)
+       but an expression was expected of type t_void
        t_void has layout void, which is not a sublayout of value.
 |}];;
 
