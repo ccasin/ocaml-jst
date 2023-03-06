@@ -69,6 +69,31 @@ val b' : baz =
 - : unit = ()
 |}];;
 
+(* Same thing, but showing that it's the order of the declaration that matters
+   *)
+
+let () = r := []
+
+let id1' {a1; a2; x; v; z; b1; b2} =
+  {a2 = (cons_r 9; {v = ((cons_r 10; a2).v)});
+   b2 = (cons_r 1; {v = ((cons_r 2; b2).v)});
+   x = (cons_r 8; x);
+   a1 = (cons_r 11; {v = ((cons_r 12; a1).v)});
+   z = (cons_r 5; z);
+   b1 = (cons_r 3; {v = ((cons_r 4; b1).v)});
+   v = (cons_r 6; {v = ((cons_r 7; v).v)});
+  }
+
+let b' = id1' b'
+
+let _ = assert (List.for_all2 (=) !r [12;11;10;9;8;7;6;5;4;3;2;1]);;
+[%%expect{|
+val id1' : baz -> baz = <fun>
+val b' : baz =
+  {a1 = <void>; a2 = <void>; x = 3; v = <void>; z = 42; b1 = <void>;
+   b2 = <void>}
+- : unit = ()
+|}];;
 
 (* Test 2: evaluation order of variants with voids *)
 type void_variant =
@@ -224,6 +249,20 @@ Line 4, characters 10-11:
               ^
 Error: Top-level module bindings must have layout value, but v has layout
        void.
+|}];;
+
+let () = r := []
+module M3_4 = struct
+  (* But it's fine if you don't bind it *)
+  let _ =
+    match cons_r 1; magic_B with
+    | B v -> cons_r 2; v
+    | _ -> assert false
+end;;
+let _ = assert (List.for_all2 (=) !r [2;1]);;
+[%%expect {|
+module M3_4 : sig end
+- : unit = ()
 |}];;
 
 (* Test 4: Void to left of semicolon *)
