@@ -363,9 +363,9 @@ let catch_void body after kind =
    non-void elements in a way that preserves evaluation order.  The input
    [expr_list] should be in reverse evaluation order.
 
-   This is generalized to support using it on both lists of expressions and
-   lists of record fields.  So it takes an ['a list] and some functions to
-   do the various bits:
+   This is generalized to support using it on not just lists of expressions, but
+   also things like record fields and value bindings. So it takes an ['a list]
+   (rather than an [expression list]) and some functions to do the various bits:
 
    is_void : 'a -> bool
    value_kind : 'a -> value_kind    (will only be called if not is_void)
@@ -1460,22 +1460,30 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
               body_kind (mk_body body)
       in
       transl pat_expr_list
+  | Recursive when List.for_all (fun { vb_sort; _} -> is_void_sort vb_sort)
+                     pat_expr_list ->
+    (* The `let rec` case where all the let-bound things are void is just the
+       same as the non-recursive case, because their mutual references get
+       erased. *)
+    transl_let ~scopes ~add_regions ~in_structure Nonrecursive pat_expr_list
+      body_kind
   | Recursive ->
+      (* CR-someday ccasinghino: List.rev here because [transl_list_with_voids]
+         wants things in reverse eval order.  And I think let recs are in eval
+         order, but actually I'm not so sure about that - it seems like any form
+         that could cause effects is banned, so maybe this is unnecessary, or
+         maybe I should just further generalize [transl_list_with_voids] to
+         handle either order. *)
+      let pat_expr_list = List.rev pat_expr_list in
       let idlist =
         List.map
           (fun {vb_pat=pat} -> match pat.pat_desc with
               Tpat_var (id,_) -> id
             | _ -> assert false)
         pat_expr_list in
-      let transl_case {vb_expr=expr; vb_sort; vb_attributes; vb_loc; vb_pat}
-            id =
-        let bound_void_k =
-          if is_void_sort vb_sort then Void_cont (next_raise_count ())
-          else Not_void
-        in
-        let lam =
-          transl_bound_exp ~scopes ~in_structure bound_void_k vb_pat expr
-        in
+      let transl_case void_k
+            {vb_expr=expr; vb_attributes; vb_loc; vb_pat; _} =
+        let lam = transl_bound_exp ~scopes ~in_structure void_k vb_pat expr in
         let lam =
           Translattribute.add_function_attributes lam vb_loc vb_attributes
         in
@@ -1485,8 +1493,28 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
         | Alloc_local, Lfunction _ -> ()
         | _ -> Misc.fatal_error "transl_let: local recursive non-function"
         end;
-        (id, lam) in
-      let lam_bds = List.map2 transl_case pat_expr_list idlist in
+        lam
+      in
+      let is_void {vb_sort; _} = is_void_sort vb_sort in
+      let value_kind {vb_expr; _} =
+        value_kind vb_expr.exp_env vb_expr.exp_type
+      in
+      let (grouped_cases, _) =
+        transl_list_with_voids ~is_void ~value_kind ~transl:transl_case
+          pat_expr_list
+      in
+      let lam_bds =
+        (* Pairs translated exps with their ids, dropping ids for void things *)
+        let rec add_ids (ids : Ident.t list) vbs lams acc =
+          match ids, vbs, lams with
+          | _, [], _ -> acc
+          | _ :: ids, vb :: vbs, _ when is_void vb -> add_ids ids vbs lams acc
+          | id :: ids, _ :: vbs, lam :: lams ->
+            add_ids ids vbs lams ((id,lam) :: acc)
+          | [], _::_, _ | _, _::_, [] -> assert false
+        in
+        add_ids idlist pat_expr_list grouped_cases []
+      in
       fun body -> Lletrec(lam_bds, body)
 
 and transl_setinstvar ~scopes loc self var expr =
