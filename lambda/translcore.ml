@@ -586,7 +586,13 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       | Extension (path,_), Variant_extensible ->
           let lam = transl_extension_path
                       (of_location ~scopes e.exp_loc) e.exp_env path in
-          if cstr.cstr_constant then lam
+          if cstr.cstr_constant
+          then
+            (* In the constant case, any args must be void *)
+            List.fold_left (fun l arg ->
+              catch_void (fun void_k -> transl_exp ~scopes void_k arg)
+                l Pintval)
+            lam args
           else
             let ll, shape = transl_arg_list args in
             Lprim(Pmakeblock(0, Immutable, Some (Pgenval :: shape),

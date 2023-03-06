@@ -378,11 +378,13 @@ val z : int = 87
 (* Test 6: Compilation of exception patterns in void matches. *)
 exception Ex1 of int
 exception Ex2 of string
-exception Ex3 of bool;;
+exception Ex3 of bool
+exception Ex4 of t_void;;
 [%%expect{|
 exception Ex1 of int
 exception Ex2 of string
 exception Ex3 of bool
+exception Ex4 of t_void
 |}];;
 
 let [@warning "-10"] exnmatch1 (V v) =
@@ -462,6 +464,28 @@ let _ = assert ((exnmatch4 vh) = 0);;
 val exnmatch4 : void_holder -> int = <fun>
 - : unit = ()
 |}];;
+
+let () = r := []
+let [@warning "-10-21"] exnmatch5 (V v) =
+  match
+    {v = (cons_r 1; v)};
+    (match vh with
+     | V v -> raise (Ex4 (cons_r 2; v)));
+    {v = (cons_r 99; v)}
+  with
+  | {v} -> V (cons_r 98; v)
+  | exception Ex4 v -> V (cons_r 3; v)
+
+let _ = exnmatch5 vh
+let l = !r
+let _ = assert (List.for_all2 (=) l [3;2;1]);;
+[%%expect{|
+val exnmatch5 : void_holder -> void_holder = <fun>
+- : void_holder = V <void>
+val l : int list = [3; 2; 1]
+- : unit = ()
+|}];;
+
 
 (* Test 7: compilation of unboxed inlined void records *)
 let () = r := []
