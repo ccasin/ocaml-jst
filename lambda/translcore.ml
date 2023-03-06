@@ -1469,10 +1469,8 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
       body_kind
   | Recursive ->
       (* CR-someday ccasinghino: List.rev here because [transl_list_with_voids]
-         wants things in reverse eval order.  And I think let recs are in eval
-         order, but actually I'm not so sure about that - it seems like any form
-         that could cause effects is banned, so maybe this is unnecessary, or
-         maybe I should just further generalize [transl_list_with_voids] to
+         wants things in reverse eval order, and let recs are in eval order.
+         Maybe I should just further generalize [transl_list_with_voids] to
          handle either order. *)
       let pat_expr_list = List.rev pat_expr_list in
       let idlist =

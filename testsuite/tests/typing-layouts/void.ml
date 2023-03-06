@@ -492,42 +492,49 @@ val x : int = 3
 |}];;
 
 (* Test 9: voids in let rec groups *)
-(* CR layouts v2: hard to do anything interesting here without functions
-   that return void, considering the restrictions on non-function let-recs.
-   Revisit when we have more interesting functions.
+(* CR layouts v2: hard to do much interesting here, considering the restrictions
+   on non-function let-recs.  Revisit when we have more interesting functions?
 *)
+let () = r := []
+
 let let_rec_of_void_1 vh x =
   let v = match vh with
     | V v -> v
   in
   (* not all void *)
-  let rec y = x
-  and v' = v
+  let rec y = (cons_r 1; x)
+  and v' = (cons_r 2; v)
   in
   (y, V v')
 
 let (x, _) = let_rec_of_void_1 vh 42
 
 let () = assert (x = 42);;
+let () = assert (List.for_all2 (=) !r [2;1]);;
+
 [%%expect{|
 val let_rec_of_void_1 : void_holder -> 'a -> 'a * void_holder = <fun>
 val x : int = 42
 |}];;
+
+let () = r := []
 
 let let_rec_of_void_2 vh x =
   let v = match vh with
     | V v -> v
   in
   (* all void *)
-  let rec v1 = v
-  and v2 = v
-  and v3 = v
+  let rec v1 = cons_r 1; v
+  and v2 = cons_r 2; v
+  and v3 = cons_r 3; v
   in
   (x, V v1, V v2, V v3)
 
 let (x, _, _, _) = let_rec_of_void_2 vh 42
 
 let () = assert (x = 42);;
+let () = assert (List.for_all2 (=) !r [3;2;1]);;
+
 [%%expect{|
 val let_rec_of_void_2 :
   void_holder -> 'a -> 'a * void_holder * void_holder * void_holder = <fun>
