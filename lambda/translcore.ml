@@ -612,6 +612,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
                   of_location ~scopes e.exp_loc)
       end
   | Texp_record {fields; representation; extended_expression} ->
+      (* Can be void if unboxed. *)
       let kind = value_kind_if_not_void e void_k in
       transl_record ~scopes void_k kind e.exp_loc e.exp_env
         (transl_exp_mode e)
@@ -1726,7 +1727,7 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
          sneaky, and results in an unneeded let binding even after simplif.  I'm
          not going to fix this now, or attempt to fold this code into the
          non-void cases below, because a) we plan to revise how void is
-         compiled.  But if we keep this, some re-thinking is in order, and b)
+         compiled (but if we keep this, some re-thinking is in order), and b)
          this structure makes it easier to see that the behavior is unchanged in
          the non-void case (reviewers: note that the original code for the
          non-void has been nested under an if, but is essentially unchanged) *)
