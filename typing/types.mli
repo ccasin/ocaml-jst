@@ -942,8 +942,10 @@ val undo_compress: snapshot -> unit
  *)
 
 val link_type: type_expr -> type_expr -> unit
-        (* Set the desc field of [t1] to [Tlink t2], logging the old
-           value if there is an active snapshot *)
+        (* Set the desc field of [t1] to [Tlink t2], logging the old value if
+           there is an active snapshot.  Any layout information in [t1]'s desc
+           is thrown away without checking - calls to this in unification should
+           first check that [t2]'s layout is a sublayout of [t1]. *)
 val set_type_desc: type_expr -> type_desc -> unit
         (* Set directly the desc field, without sharing *)
 val set_level: type_expr -> int -> unit
