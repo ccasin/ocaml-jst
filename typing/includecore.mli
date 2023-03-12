@@ -105,7 +105,7 @@ type type_mismatch =
   | Variance
   | Record_mismatch of record_mismatch
   | Variant_mismatch of variant_change list
-  | Unboxed_representation of position
+  | Unboxed_representation of position * attributes
   | Extensible_representation of position
   | Layout of Layout.Violation.t
 

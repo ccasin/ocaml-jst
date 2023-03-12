@@ -956,7 +956,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
             optimisation in Flambda, but the concept of a mutable
             block doesn't really match what is going on here.  This
             value may subsequently turn into an immediate... *)
-         Lprim (Popaque,
+         Lprim (Popaque Lambda.layout_lazy,
                 [Lprim(Pmakeblock(Obj.forward_tag, Immutable, None,
                                   alloc_heap),
                        [transl_exp ~scopes Not_void e],
@@ -1071,12 +1071,14 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
           tmc_candidate = false;
         } in
       let funcid = Ident.create_local ("probe_handler_" ^ name) in
+      let layout = Typeopt.layout exp.exp_env exp.exp_type in
+      (* CR ncourant: how do we get the layouts for the free variables? *)
       let handler =
         let scopes = enter_value_definition ~scopes funcid in
         lfunction
           ~kind:(Curried {nlocal=0})
           ~params:(List.map (fun v -> v, Lambda.layout_top) param_idents)
-          ~return:Lambda.layout_top
+          ~return:layout
           ~body
           ~loc:(of_location ~scopes exp.exp_loc)
           ~attr
@@ -1086,7 +1088,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
       let app =
         { ap_func = Lvar funcid;
           ap_args = List.map (fun id -> Lvar id) arg_idents;
-          ap_result_layout = Typeopt.layout exp.exp_env exp.exp_type;
+          ap_result_layout = layout;
           ap_region_close = Rc_normal;
           ap_mode = alloc_heap;
           ap_loc = of_location e.exp_loc ~scopes;
@@ -1126,6 +1128,12 @@ and pure_module m =
 (* list elements must be non-void *)
 and transl_list ~scopes expr_list =
   List.map (transl_exp ~scopes Not_void) expr_list
+
+(* list elements must be non-void *)
+and transl_list_with_layout ~scopes expr_list =
+  List.map (fun exp -> (transl_exp ~scopes Not_void exp,
+                        Typeopt.layout exp.exp_env exp.exp_type))
+    expr_list
 
 and transl_guard ~scopes void_k guard rhs =
   let layout = layout_if_not_void rhs void_k in
@@ -1178,7 +1186,7 @@ and transl_apply ~scopes
       ~result_layout
       lam sargs loc
   =
-  let lapply funct args loc pos mode =
+  let lapply funct args loc pos mode result_layout =
     match funct, pos with
     | Lsend((Self | Public) as k, lmet, lobj, [], _, _, _, _), _ ->
         Lsend(k, lmet, lobj, args, pos, mode, loc, result_layout)
@@ -1217,21 +1225,24 @@ and transl_apply ~scopes
         }
   in
   let rec build_apply lam args loc pos ap_mode = function
-    | Omitted { mode_closure; mode_arg; mode_ret } :: l ->
+    | Omitted { mode_closure; mode_arg; mode_ret; ty_arg; ty_env } :: l ->
         assert (pos = Rc_normal);
         let defs = ref [] in
-        let protect name lam =
+        let protect name (lam, layout) =
           match lam with
-            Lvar _ | Lconst _ -> lam
+            Lvar _ | Lconst _ -> (lam, layout)
           | _ ->
               let id = Ident.create_local name in
-              defs := (id, lam) :: !defs;
-              Lvar id
+              defs := (id, layout, lam) :: !defs;
+              (Lvar id, layout)
         in
         let lam =
-          if args = [] then lam else lapply lam (List.rev args) loc pos ap_mode
+          if args = [] then
+            lam
+          else
+            lapply lam (List.rev args) loc pos ap_mode layout_function
         in
-        let handle = protect "func" lam in
+        let handle, _ = protect "func" (lam, layout_function) in
         let l =
           List.map
             (fun arg ->
@@ -1257,22 +1268,24 @@ and transl_apply ~scopes
             | Alloc_local -> false
             | Alloc_heap -> true
           in
-          lfunction ~kind:(Curried {nlocal}) ~params:[id_arg, Lambda.layout_top]
-                    ~return:Lambda.layout_top ~body ~mode ~region
+          let layout_arg = Typeopt.layout ty_env ty_arg in
+          lfunction ~kind:(Curried {nlocal}) ~params:[id_arg, layout_arg]
+                    ~return:result_layout ~body ~mode ~region
                     ~attr:default_stub_attribute ~loc
         in
         List.fold_right
-          (fun (id, lam) body -> Llet(Strict, Lambda.layout_top, id, lam, body))
+          (fun (id, layout, lam) body -> Llet(Strict, layout, id, lam, body))
           !defs body
-    | Arg arg :: l -> build_apply lam (arg :: args) loc pos ap_mode l
-    | [] -> lapply lam (List.rev args) loc pos ap_mode
+    | Arg (arg, _) :: l -> build_apply lam (arg :: args) loc pos ap_mode l
+    | [] -> lapply lam (List.rev args) loc pos ap_mode result_layout
   in
   let args =
     List.map
       (fun (_, arg) ->
          match arg with
          | Omitted _ as arg -> arg
-         | Arg exp -> Arg (transl_exp ~scopes Not_void exp))
+         | Arg exp -> Arg (transl_exp ~scopes Not_void exp,
+                           Typeopt.layout exp.exp_env exp.exp_type))
       (* CR layouts v2: Not_void above to change when non-value args allowed. *)
       sargs
   in
@@ -1318,7 +1331,7 @@ and transl_curried_function
              Curried {nlocal = nlocal + 1}
         in
         ((fnkind, (param, layout) :: params, return, region),
-         Matching.for_function ~scopes return_layout loc None (Lvar param)
+         Matching.for_function ~scopes return_layout loc None (Lvar param, layout)
            [pat, body] partial)
       else begin
         begin match partial with
@@ -1398,7 +1411,7 @@ and transl_function0
       match cases with
       | [] ->
         (* With Camlp4, a pattern matching might be empty *)
-        Lambda.layout_top
+        Lambda.layout_bottom
       | {c_lhs=pat} :: other_cases ->
         (* All the patterns might not share the same types. We must take the
            union of the patterns types *)
@@ -1407,7 +1420,7 @@ and transl_function0
           (fun_arg_layout pat) other_cases
     in
     let body =
-      Matching.for_function ~scopes return loc repr (Lvar param)
+      Matching.for_function ~scopes return loc repr (Lvar param, layout)
         (transl_cases ~scopes Not_void cases) partial
       (* CR layouts v2: Not_void above to change when non-value bodies added. *)
     in
@@ -1769,7 +1782,8 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
       | [] ->
         catch_void (fun void_k -> transl_exp ~scopes void_k arg)
           (Matching.for_function ~scopes layout e.exp_loc
-             None lambda_unit val_cases partial)
+             None (lambda_unit, Pvalue Pintval (* XXX layouts *))
+             val_cases partial)
           layout
       | _ :: _ ->
         let id = Typecore.name_pattern "exn" (List.map fst exn_cases) in
@@ -1782,7 +1796,8 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
         catch_void
           transl_arg
           (Matching.for_function ~scopes layout e.exp_loc
-             None lambda_unit val_cases partial)
+             None (lambda_unit, Pvalue Pintval (* XXX layouts *))
+             val_cases partial)
           layout
     else
       (* In presence of exception patterns, the code we generate for
@@ -1819,7 +1834,7 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
         assert (static_handlers = []);
         let mode = transl_alloc_mode alloc_mode in
         Matching.for_multiple_match ~scopes layout e.exp_loc
-          (transl_list ~scopes argl) mode val_cases partial
+          (transl_list_with_layout ~scopes argl) mode val_cases partial
       | {exp_desc = Texp_tuple (argl, alloc_mode)}, _ :: _ ->
           let val_ids =
             List.map
@@ -1831,21 +1846,22 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
               )
               argl
           in
-          let lvars = List.map (fun (id, _) -> Lvar id) val_ids in
+          let lvars = List.map (fun (id, layout) -> Lvar id, layout) val_ids in
           let mode = transl_alloc_mode alloc_mode in
           static_catch (transl_list ~scopes argl) val_ids
             (Matching.for_multiple_match ~scopes layout e.exp_loc
                lvars mode val_cases partial)
       | arg, [] ->
         assert (static_handlers = []);
+        let k = Typeopt.layout arg.exp_env arg.exp_type in
         Matching.for_function ~scopes layout e.exp_loc
-          None (transl_exp ~scopes Not_void arg) val_cases partial
+          None (transl_exp ~scopes Not_void arg, k) val_cases partial
       | arg, _ :: _ ->
           let val_id = Typecore.name_pattern "val" (List.map fst val_cases) in
           let k = Typeopt.layout arg.exp_env arg.exp_type in
           static_catch [transl_exp ~scopes Not_void arg] [val_id, k]
             (Matching.for_function ~scopes layout e.exp_loc
-               None (Lvar val_id) val_cases partial)
+               None (Lvar val_id, k) val_cases partial)
   in
   List.fold_left (fun body (static_exception_id, val_ids, handler) ->
     Lstaticcatch (body, (static_exception_id, val_ids), handler, layout)
@@ -1866,14 +1882,17 @@ and transl_letop ~scopes loc env let_ ands param case partial warnings =
             and_.bop_op_type and_.bop_op_path and_.bop_op_val Id_value
         in
         let exp = transl_exp ~scopes Not_void and_.bop_exp in
-        let layout = layout and_.bop_exp.exp_env and_.bop_exp.exp_type in
+        let right_layout = layout and_.bop_exp.exp_env and_.bop_exp.exp_type in
+        let result_layout = function2_return_layout
+          env and_.bop_op_type
+        in
         let lam =
-          bind_with_layout Strict (right_id, layout) exp
+          bind_with_layout Strict (right_id, right_layout) exp
             (Lapply{
                ap_loc = of_location ~scopes and_.bop_loc;
                ap_func = op;
                ap_args=[Lvar left_id; Lvar right_id];
-               ap_result_layout = Lambda.layout_top;
+               ap_result_layout = result_layout;
                ap_region_close=Rc_normal;
                ap_mode=alloc_heap;
                ap_tailcall = Default_tailcall;
@@ -1882,7 +1901,7 @@ and transl_letop ~scopes loc env let_ ands param case partial warnings =
                ap_probe=None;
              })
         in
-        bind_with_layout Strict (left_id, prev_layout) prev_lam (loop Lambda.layout_top lam rest)
+        bind_with_layout Strict (left_id, prev_layout) prev_lam (loop result_layout lam rest)
   in
   let op =
     transl_ident (of_location ~scopes let_.bop_op_name.loc) env
@@ -1911,7 +1930,7 @@ and transl_letop ~scopes loc env let_ ands param case partial warnings =
     ap_loc = of_location ~scopes loc;
     ap_func = op;
     ap_args=[exp; func];
-    ap_result_layout=Lambda.layout_top;
+    ap_result_layout=function2_return_layout env let_.bop_op_type;
     ap_region_close=Rc_normal;
     ap_mode=alloc_heap;
     ap_tailcall = Default_tailcall;

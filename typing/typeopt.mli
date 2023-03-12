@@ -35,6 +35,8 @@ val layout : Env.t -> Types.type_expr -> Lambda.layout
 val value_kind : Env.t -> Types.type_expr -> Lambda.value_kind
 
 val function_return_layout : Env.t -> Types.type_expr -> Lambda.layout
+(* Gives the return layout of a function with two arguments. *)
+val function2_return_layout : Env.t -> Types.type_expr -> Lambda.layout
 
 val classify_lazy_argument : Typedtree.expression ->
                              [ `Constant_or_function

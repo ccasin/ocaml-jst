@@ -184,12 +184,12 @@ type primitive =
   (* Integer to external pointer *)
   | Pint_as_pointer
   (* Inhibition of optimisation *)
-  | Popaque
+  | Popaque of layout
   (* Statically-defined probes *)
   | Pprobe_is_enabled of { name: string }
   (* Primitives for [Obj] *)
   | Pobj_dup
-  | Pobj_magic
+  | Pobj_magic of layout
 
 and integer_comparison =
     Ceq | Cne | Clt | Cgt | Cle | Cge
@@ -500,6 +500,7 @@ val layout_lazy : layout
 val layout_lazy_contents : layout
 (* A layout that is Pgenval because we are missing layout polymorphism *)
 val layout_any_value : layout
+(* A layout that is Pgenval because it is bound by a letrec *)
 val layout_letrec : layout
 
 val layout_top : layout
@@ -678,3 +679,5 @@ val mod_setfield: int -> primitive
 val structured_constant_layout : structured_constant -> layout
 
 val primitive_result_layout : primitive -> layout
+
+val compute_expr_layout : layout Ident.Map.t -> lambda -> layout
