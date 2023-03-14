@@ -16,6 +16,7 @@
 (* Type inference for the core language *)
 
 open Asttypes
+open Layouts
 open Types
 
 (* This variant is used for printing which type of comprehension something is

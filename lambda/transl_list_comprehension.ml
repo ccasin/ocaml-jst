@@ -199,7 +199,7 @@ let iterator ~transl_exp ~scopes = function
           (* CR layouts: to change when we allow non-values in sequences *)
           Matching.for_let
             ~scopes pattern.pat_loc Not_void (Lvar element)
-            Types.Sort.value pattern (Pvalue Pgenval)
+            Layouts.Sort.value pattern (Pvalue Pgenval)
       }
 
 (** Translates a list comprehension binding

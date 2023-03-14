@@ -492,7 +492,7 @@ let iterator ~transl_exp ~scopes ~loc
                    (Lprim(Parrayrefu iter_arr_kind,
                           [iter_arr.var; Lvar iter_ix],
                           loc))
-                   Types.Sort.value
+                   Layouts.Sort.value
                    pattern
                    (Pvalue Pintval)
                    body
