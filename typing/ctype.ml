@@ -1316,7 +1316,7 @@ let instance_constructor ?in_pattern cstr =
           let layout =
             match get_desc existential with
             | Tvar { layout } -> layout
-            | Tvariant _ -> Layout.value
+            | Tvariant _ -> Layout.value (* Existential row variable *)
             | _ -> assert false
           in
           let decl = new_local_type layout in
@@ -1353,6 +1353,7 @@ let instance_parameterized_type_2 sch_args sch_lst sch =
     (ty_args, ty_lst, ty)
   )
 
+(* [map_kind f kind] maps [f] over all the types in [kind]. [f] must preserve layouts *)
 let map_kind f = function
   | (Type_abstract _ | Type_open) as k -> k
   | Type_variant (cl, rep) ->
@@ -1902,7 +1903,8 @@ let layout_of_result = function
 
    Note that this really returns an upper bound, and in particular returns [Any]
    in some edge cases (when [get_unboxed_type_representation] ran out of fuel,
-   or when the type is a Tconstr that is missing from the Env). *)
+   or when the type is a Tconstr that is missing from the Env due to a missing
+   cmi). *)
 let rec estimate_type_layout env ty =
   let open Layout in
   match get_desc ty with
@@ -1937,33 +1939,37 @@ let rec estimate_type_layout env ty =
 (* For convenience, this returns the most precise layout we computed for the
    type (which may still be an upper bound).
 
+   The ~fixed argument controls what effects this may have on `ty`.  If false,
+   then we will update the layout of type variables to make the check true, if
+   possible.  If true, we won't (but will still instantiate sort variables).
+
    The "fuel" argument here is used because we're duplicating the loop of
-   `get_unboxed_type_representation`, but performing layout checking of each
+   `get_unboxed_type_representation`, but performing layout checking at each
    step.  This allows to check examples like:
 
      type 'a t = 'a list
      type s = { lbl : s t } [@@unboxed]
 
-   Here, we want to see [s t] is value, and this only requires expanding once to
-   see [t] is list and [s] is irrelvant.  But calling
+   Here, we want to see [s t] has layout value, and this only requires expanding
+   once to see [t] is list and [s] is irrelvant.  But calling
    [get_unboxed_type_representation] itself would otherwise get into a nasty
    loop trying to also expand [s], and then performing layout checking to ensure
    it's a valid argument to [t].  (We believe there are still loops like this
    that can occur, though, and may need a more principled solution later).
 *)
-let rec constrain_type_layout ~fixed env ty1 layout2 fuel =
-  let constrain_unboxed ty1 =
-    match estimate_type_layout env ty1 with
-    | Layout layout1 -> Layout.sub layout1 layout2
-    | TyVar (layout1, ty) ->
-      if fixed then Layout.sub layout1 layout2
+let rec constrain_type_layout ~fixed env ty layout fuel =
+  let constrain_unboxed ty =
+    match estimate_type_layout env ty with
+    | Layout ty_layout -> Layout.sub ty_layout layout
+    | TyVar (ty_layout, ty) ->
+      if fixed then Layout.sub ty_layout layout
       else
-        Result.map (fun layout1 -> set_var_layout ty layout1; layout1)
-          (Layout.intersection layout1 layout2)
+        Result.map (fun layout -> set_var_layout ty layout; layout)
+          (Layout.intersection ty_layout layout)
   in
   (* This is an optimization to avoid unboxing if we can tell the constraint is
      satisfied from the type_kind *)
-  match get_desc ty1 with
+  match get_desc ty with
   | Tconstr(p, _args, _abbrev) -> begin
       let layout_bound =
         begin match Env.find_type p env with
@@ -1971,18 +1977,18 @@ let rec constrain_type_layout ~fixed env ty1 layout2 fuel =
         | exception Not_found -> Layout.any
         end
       in
-      match Layout.sub layout_bound layout2 with
+      match Layout.sub layout_bound layout with
       | Ok _ as ok -> ok
       | Error _ as err when fuel < 0 -> err
       | Error _ as err ->
-        begin match unbox_once env ty1 with
-        | Not_unboxed ty1 -> constrain_unboxed ty1
-        | Unboxed ty1 -> constrain_type_layout ~fixed env ty1 layout2 (fuel - 1)
+        begin match unbox_once env ty with
+        | Not_unboxed ty -> constrain_unboxed ty
+        | Unboxed ty -> constrain_type_layout ~fixed env ty layout (fuel - 1)
         | Missing -> err
         end
     end
-  | Tpoly (ty, _) -> constrain_type_layout ~fixed env ty layout2 fuel
-  | _ -> constrain_unboxed ty1
+  | Tpoly (ty, _) -> constrain_type_layout ~fixed env ty layout fuel
+  | _ -> constrain_unboxed ty
 
 let check_type_layout env ty layout =
   constrain_type_layout ~fixed:true env ty layout 100
@@ -1991,16 +1997,12 @@ let constrain_type_layout env ty layout =
   constrain_type_layout ~fixed:false env ty layout 100
 
 let check_decl_layout env decl layout =
-  match find_unboxed_type decl with
-  | Some arg -> check_type_layout env arg layout
-  | None ->
-      match Layout.sub
-              (layout_bound_of_kind decl.type_kind) layout with
-      | Ok _ as ok -> ok
-      | Error _ as err ->
-          match decl.type_manifest with
-          | None -> err
-          | Some ty -> check_type_layout env ty layout
+  match Layout.sub (layout_bound_of_kind decl.type_kind) layout with
+  | Ok _ as ok -> ok
+  | Error _ as err ->
+      match decl.type_manifest with
+      | None -> err
+      | Some ty -> check_type_layout env ty layout
 
 (* CJC XXX errors: locations and better error reporting.  Maybe this should take
    in a trace_exn? *)
@@ -2869,29 +2871,6 @@ let add_layout_equation env destination layout1 =
      abstract, we can improve type checking by assigning destination that
      layout.  If destination is not abstract, we can't locally improve its
      layout, so we're slightly incomplete.  *)
-  (* CR ccasinghino:
-
-     Stephen pointed out the following weird example:
-
-       module M : sig type t [@@immediate] end = struct type t = int end
-       type (_,_) eq = Refl : ('a, 'a) eq
-       let f (Refl : (M.t, string) eq) = (Refl : (M.t, string) eq)
-
-     This type checks, both with layouts and with the old [@@immediate].
-     After pattern matching on Refl, you're in dead code, but it
-     could get compiled very weirdly.
-
-     He suggested the following alternative strategy:
-
-     Rather than this intersection, constrain the destination to have the
-     appropriate layout:
-
-       constrain_type_layout env destination layout1
-
-     Then this layout gets used as the intersection does below.
-
-     This would break some existing programs, but probably only bad ones?
-  *)
   match intersect_type_layout !env destination layout1 with
   | Error err -> raise_for Unify (Bad_layout (destination,err))
   (* CJC XXX errors rethink for new error system *)
@@ -2923,9 +2902,9 @@ let add_gadt_equation env source destination =
     let expansion_scope =
       Int.max (Path.scope source) (get_gadt_equations_level ())
     in
-    (* Layouts: computing the actual layout here is required, not just for
+    (* Layouts: recording the actual layout here is required, not just for
        efficiency.  When we check the layout later, we may not be able to see
-       the local equation because of its level. *)
+       the local equation because of its scope. *)
     let layout = layout_of_abstract_type_declaration !env source in
     add_layout_equation env destination layout;
     let decl =
@@ -3119,7 +3098,15 @@ let rec unify (env:Env.t ref) t1 t2 =
         update_level_for Unify !env (get_level t1) t2;
         update_scope_for Unify (get_scope t1) t2;
         (* CJC XXX: make test cases that hit this.  Easier once we have
-           annotations on univars, I think. *)
+           annotations on univars, I think.
+
+           Richard suggests:
+
+           let poly : ('a. 'a -> 'a) -> int * bool =
+             fun (id : ('a : immediate). 'a -> 'a) -> id 3, id true
+
+           Which should probably fail, even though it would be sound to accept.
+        *)
         if not (Layout.equate l1 l2) then
           raise_for Unify (Unequal_univar_layouts (t1, l1, t2, l2));
         link_type t1 t2
@@ -3732,7 +3719,8 @@ let filter_arrow env t l ~force_tpoly =
        function types that arise from inference, and the check in
        [Typetexp.transl_type_aux] handles function types explicitly written in
        the source program.  When we decide to drop that restriction, we can
-       probably allow [t1] to be any sort, and [t2] to be just any. *)
+       allow both to be any, with relevant checks on function arguments
+       happening when functions are constructed, not their types. *)
     let t1 =
       if not force_tpoly then begin
         assert (not (is_optional l));
