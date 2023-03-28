@@ -160,6 +160,8 @@ let mk_add_type add_type
   in
   add_type type_ident decl env
 
+(* CR layouts: Changes will be needed here as we add support for the built-ins
+   to work with non-values, and as we relax the mixed block restriction. *)
 let common_initial_env add_type add_extension empty_env =
   let add_type = mk_add_type add_type
   and add_type1 ?(kind=fun _ -> Types.kind_abstract_value) type_ident

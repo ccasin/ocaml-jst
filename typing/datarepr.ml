@@ -99,12 +99,16 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
     | Variant_boxed layouts -> layouts
     | Variant_unboxed layout -> [| [| layout |] |]
   in
-  let all_void layouts = Array.for_all Layout.(equate void) layouts in
+  let all_void layouts = Array.for_all Layout.can_make_void layouts in
   let num_consts = ref 0 and num_nonconsts = ref 0 in
-  Array.iter
-    (fun layouts ->
-      if all_void layouts then incr num_consts else incr num_nonconsts)
-    cstr_arg_layouts;
+  let cstr_constant =
+    Array.map
+      (fun layouts ->
+         let all_void = all_void layouts in
+         if all_void then incr num_consts else incr num_nonconsts;
+         all_void)
+      cstr_arg_layouts
+  in
   let describe_constructor (src_index, const_tag, nonconst_tag, acc)
         {cd_id; cd_args; cd_res; cd_loc; cd_attributes; cd_uid} =
     let cstr_name = Ident.name cd_id in
@@ -114,7 +118,7 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
       | None -> ty_res
     in
     let cstr_arg_layouts = cstr_arg_layouts.(src_index) in
-    let cstr_constant = all_void cstr_arg_layouts in
+    let cstr_constant = cstr_constant.(src_index) in
     let runtime_tag, const_tag, nonconst_tag =
       if cstr_constant
       then const_tag, 1 + const_tag, nonconst_tag
@@ -123,10 +127,7 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
     let cstr_tag = Ordinary {src_index; runtime_tag} in
     let cstr_existentials, cstr_args, cstr_inlined =
       (* This is the representation of the inner record, IF there is one *)
-      let record_repr = match rep with
-        | Variant_unboxed _ | Variant_boxed _ -> Record_inlined (cstr_tag, rep)
-        | Variant_extensible -> assert false
-      in
+      let record_repr = Record_inlined (cstr_tag, rep) in
       constructor_args ~current_unit decl.type_private cd_args cd_res
         (Path.Pdot (ty_path, cstr_name)) record_repr
     in
@@ -205,7 +206,7 @@ let label_descrs ty_res lbls repres priv =
   let rec describe_labels num pos = function
       [] -> []
     | l :: rest ->
-        let is_void = Layout.(equate l.ld_layout void) in
+        let is_void = Layout.can_make_void l.ld_layout  in
         let lbl =
           { lbl_name = Ident.name l.ld_id;
             lbl_res = ty_res;

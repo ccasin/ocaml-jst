@@ -130,7 +130,7 @@ module Layout : sig
   val of_desc : desc -> t
 
   (** Returns the sort corresponding to the layout.  Call only on representable
-      layouts - errors on Any. *)
+      layouts - raises on Any. *)
   val sort_of_layout : t -> sort
 
   (*********************************)
@@ -146,10 +146,22 @@ module Layout : sig
       | Not_a_sublayout of t * t
       | No_intersection of t * t
 
+
+    (* CR layouts: Having these options for printing a violation was a choice
+       made based on the needs of expedient debugging during development, but
+       probably should be rethought at some point. *)
+    (** Prints a violation and the thing that had an unexpected layout
+        ([offender], which you supply an arbitrary printer for). *)
     val report_with_offender :
       offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
+
+    (** Like [report_with_offender], but additionally prints that the issue is
+        that a representable layout was expected. *)
     val report_with_offender_sort :
       offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
+
+    (** Simpler version of [report_with_offender] for when the thing that had an
+        unexpected layout is available as a string. *)
     val report_with_name : name:string -> Format.formatter -> t -> unit
   end
 
@@ -161,8 +173,9 @@ module Layout : sig
       variable to be [value] *)
   val equate : t -> t -> bool
 
-  (** Finds the intersection of two layouts, or returns a [Violation.t]
-      if an intersection does not exist. *)
+  (** Finds the intersection of two layouts, constraining sort variables to
+      create one if needed, or returns a [Violation.t] if an intersection does
+      not exist. *)
   val intersection : t -> t -> (t, Violation.t) Result.t
 
   (** [sub t1 t2] returns [Ok t1] iff [t1] is a sublayout of

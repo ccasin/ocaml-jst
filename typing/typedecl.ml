@@ -108,6 +108,7 @@ let enter_type rec_flag env sdecl (id, uid) =
         Btype.is_row_name (Ident.name id)
     | Asttypes.Recursive -> true
   in
+  if not needed then env else
   let arity = List.length sdecl.ptype_params in
 
   (* There is some trickiness going on here with the layout.  It expands on an
@@ -165,26 +166,37 @@ let enter_type rec_flag env sdecl (id, uid) =
   let layout =
     Layout.of_attributes ~default:Layout.any sdecl.ptype_attributes
   in
-  if not needed then env else
   let decl =
     { type_params =
-        (* CR ccasinghino: At the moment, we're defaulting type parameters in
+        (* CR layouts: At the moment, we're defaulting type parameters in
            recursive type declarations to layout value.  We could probably allow
-           (Sort 'l) and default to value if it's not determined by use. *)
+           (Sort 'l) and default to value if it's not determined by use.
+
+           Richard supplies the following example:
+
+           (* setup: *)
+           type t_void [@@void]
+           type ('a : void) void_t
+
+           (* case 1: *)
+           type 'b t = 'b void_t * t2
+           and t2 = t_void void_t
+
+           (* case 2: *)
+           type 'b t = 'b void_t * t2
+           and t2 = t_void t
+
+           Case 1 is accepted and case 2 is rejected, which isn't the end of the
+           world, but could perhaps be improved.
+        *)
         List.map (fun ({ptyp_attributes;_},_) ->
           let layout =
-            Layout.of_attributes ~default:Layout.value
-              ptyp_attributes
+            Layout.of_attributes ~default:Layout.value ptyp_attributes
           in
           Btype.newgenvar layout) sdecl.ptype_params;
       type_arity = arity;
       type_kind = Types.kind_abstract ~layout;
       type_private = sdecl.ptype_private;
-      (* CJC XXX errors: putting layout here, rather than "any", is causing us
-         to fail earlier and get bad error messages in some cases.  (e.g.,
-         [tests/typing-immediate/immediate.ml], line 149, fails in [update_type]
-         rather than at the very end of [transl_type_decl], resulting in a very
-         bad message. *)
       type_manifest = Some (Ctype.newvar layout);
       type_variance = Variance.unknown_signature ~injective:false ~arity;
       type_separability = Types.Separability.default_signature ~arity;

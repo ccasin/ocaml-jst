@@ -54,6 +54,9 @@ val approx_type_decl:
                                   (Ident.t * type_declaration) list
 val check_recmod_typedecl:
     Env.t -> Location.t -> Ident.t list -> Path.t -> type_declaration -> unit
+
+(* Returns an updated decl that may include improved layout estimates, but it's
+   sound to throw it away. *)
 val check_coherence:
     Env.t -> Location.t -> Path.t -> type_declaration -> type_declaration
 
@@ -62,6 +65,7 @@ val is_fixed_type : Parsetree.type_declaration -> bool
 
 type native_repr_kind = Unboxed | Untagged
 
+(* Records reason for a layout representability requirement in errors. *)
 type layout_sort_loc = Cstr_tuple | Record
 
 type error =

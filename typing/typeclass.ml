@@ -1461,6 +1461,7 @@ let rec approx_declaration cl =
       let arg =
         if Btype.is_optional l then Ctype.instance var_option
         else Ctype.newvar Layout.value
+        (* CR layouts: use of value here may be relaxed in v2 *)
       in
       let arg = Ctype.newmono arg in
       let arrow_desc = l, Alloc_mode.global, Alloc_mode.global in
@@ -1478,6 +1479,7 @@ let rec approx_description ct =
       let arg =
         if Btype.is_optional l then Ctype.instance var_option
         else Ctype.newvar Layout.value
+        (* CR layouts: use of value here may be relaxed in v2 *)
       in
       let arg = Ctype.newmono arg in
       let arrow_desc = l, Alloc_mode.global, Alloc_mode.global in
