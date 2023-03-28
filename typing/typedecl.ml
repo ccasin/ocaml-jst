@@ -210,6 +210,24 @@ let enter_type rec_flag env sdecl (id, uid) =
   in
   add_type ~check:true id decl env
 
+(* [update_type] performs step 3 of the process described in the comment in
+   [enter_type]: We unify the manifest of each type with the definition of that
+   variable in [temp_env], which contains any requirements on the type implied
+   by its use in other mutually defined types.
+
+   In particular, we want to ensure that the manifest of this type has a layout
+   compatible with its uses in mutually defined types.  One subtlety is that we
+   don't actually perform those layout checks here - we use
+   [Ctype.unify_delaying_layout_checks] to record any needed layout checks, but
+   don't perform them until slightly later in [transl_type_decl].
+
+   The reason for this delay is ill-formed, circular types.  These haven't been
+   ruled out yet, and as a result layout checking can fall into an infinite loop
+   where layout checking expands types, and these type expansions in subst
+   trigger layout checks that trigger type expansions that trigger layout checks
+   that...  These circular types are ruled out just after [update_type] in
+   [transl_type_decl], and then we perform the delayed checks.
+*)
 let update_type temp_env env id loc =
   let path = Path.Pident id in
   let decl = Env.find_type path temp_env in
@@ -349,7 +367,7 @@ let transl_labels env univars closed lbls =
          {Types.ld_id = ld.ld_id;
           ld_mutable = ld.ld_mutable;
           ld_global = ld.ld_global;
-          ld_layout = Layout.any; (* Updated later *)
+          ld_layout = Layout.any; (* Updated by [update_label_layouts] *)
           ld_type = ty;
           ld_loc = ld.ld_loc;
           ld_attributes = ld.ld_attributes;
@@ -575,12 +593,13 @@ let transl_declaration env sdecl (id, uid) =
             (* We mark all arg layouts "any" here.  They are updated later,
                after the circular type checks make it safe to check layouts. *)
             Variant_boxed (
-              Array.of_list (List.map (fun cstr ->
-                match Types.(cstr.cd_args) with
-                | Cstr_tuple args ->
-                  Array.make (List.length args) Layout.any
-                | Cstr_record _ -> [| Layout.any |])
-                cstrs)
+              Array.map
+                (fun cstr ->
+                   match Types.(cstr.cd_args) with
+                   | Cstr_tuple args ->
+                     Array.make (List.length args) Layout.any
+                   | Cstr_record _ -> [| Layout.any |])
+                (Array.of_list cstrs)
             )
         in
           Ttype_variant tcstrs, Type_variant (cstrs, rep)
