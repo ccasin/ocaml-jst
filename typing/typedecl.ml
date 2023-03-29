@@ -515,23 +515,36 @@ let transl_declaration env sdecl (id, uid) =
   in
   verify_unboxed_attr unboxed_attr sdecl;
   let layout_annotation = Builtin_attributes.layout sdecl.ptype_attributes in
+  let (tman, man) = match sdecl.ptype_manifest with
+      None -> None, None
+    | Some sty ->
+      let no_row = not (is_fixed_type sdecl) in
+      let cty = transl_simple_type env ~closed:no_row Global sty in
+      Some cty, Some cty.ctyp_type
+  in
   let (tkind, kind) =
     match sdecl.ptype_kind with
       | Ptype_abstract ->
         let layout =
-          (* - If there's no annotation and no manifest, we just default to
+          (* - If there's an annotation, we use that. It's checked at the end of
+               [transl_type_decl].
+             - If there's no annotation but there is a manifest, we estimate the
+               layout based on the manifest here. This upper bound saves time
+               later by avoiding expanding the manifest in layout checks, but it
+               would be sound to leave in `any`. We can't give a perfectly
+               accurate layout here because we don't have access to the
+               manifests of mutually defined types (but we could one day consider
+               improving it at a later point in transl_type_decl).
+             - If there's no annotation and no manifest, we just default to
                value here. We could conceivably, in the future, try to learn
                something from the uses of the type (particularly in a group of
-               mutually recursive types).
-             - If there is a manifest, we put in a better bound for the layout
-               after translating the manifest below.
+               mutually recursive types).  But not here in transl_declaration,
+               which can't see those.
           *)
-          let default =
-            if Option.is_some sdecl.ptype_manifest
-            then Layout.any
-            else Layout.value
-          in
-          Layout.of_const_option ~default layout_annotation
+          match layout_annotation, man with
+          | Some annot, _ -> Layout.of_const annot
+          | None, Some typ -> Ctype.estimate_type_layout env typ
+          | None, None -> Layout.value
         in
         Ttype_abstract, Type_abstract {layout}
       | Ptype_variant scstrs ->
@@ -584,6 +597,18 @@ let transl_declaration env sdecl (id, uid) =
         let tcstrs, cstrs = List.split (List.map make_cstr scstrs) in
         let rep =
           if unbox then
+            (* For @@unboxed types with layout annotations, we do the following:
+               1) Here we trust and record the layout annotation.  It may be
+                  needed for mutually defined types.
+               2) In [check_decl_layout] we compute an accurate layout from the
+                  rest of the kind (the inner part of the unboxed type).  This
+                  is done without reference to the annotation and it may be
+                  unrelated.  We replace the layout here with that accurate
+                  layout.
+               3) At the end of [transl_type_decl], we check the accuracy of
+                  annotations, which will in this case be a check that the
+                  accurate layout from step 2 is a sublayout of the annotation.
+            *)
             let layout =
               Layout.of_const_option ~default:Layout.any
                 layout_annotation
@@ -607,9 +632,10 @@ let transl_declaration env sdecl (id, uid) =
           let lbls, lbls' = transl_labels env None true lbls in
           let rep =
             if unbox then
+              (* This is improved in [update_decl_layout] - see the comment
+                 on the Variant_unboxed case above.*)
               let layout =
-                Layout.of_const_option ~default:Layout.any
-                  layout_annotation
+                Layout.of_const_option ~default:Layout.any layout_annotation
               in
               Record_unboxed layout
             else if List.for_all (fun l -> is_float env l.Types.ld_type) lbls'
@@ -619,26 +645,6 @@ let transl_declaration env sdecl (id, uid) =
           Ttype_record lbls, Type_record(lbls', rep)
       | Ptype_open -> Ttype_open, Type_open
       in
-    let (tman, man) = match sdecl.ptype_manifest with
-        None -> None, None
-      | Some sty ->
-        let no_row = not (is_fixed_type sdecl) in
-        let cty = transl_simple_type env ~closed:no_row Global sty in
-        Some cty, Some cty.ctyp_type
-    in
-    let kind =
-      (* For abstract types with a manifest, we can avoid unnecessary expansion
-         and save time later by providing an upper bound here.  We do a quick
-         estimate, (in particular not bothering to expand unboxed types), but it
-         would be sound to leave in "any". *)
-      match kind, man with
-      | Type_abstract _, Some typ -> begin
-          match layout_annotation with
-          | Some _ -> kind
-          | None -> Type_abstract {layout = Ctype.estimate_type_layout env typ}
-        end
-      | (((Type_record _ | Type_variant _ | Type_open), _) | (_, None)) -> kind
-    in
     let arity = List.length params in
     let decl =
       { type_params = params;
@@ -923,6 +929,10 @@ let default_decls_layout decls =
    [Ctype.type_layout_representable] that avoids duplicated work *)
 let check_representable env loc lloc typ =
   match Ctype.type_sort env typ with
+  (* CR layouts: This is not the right place to default to value.  Some callers
+     of this do need defaulting, because they, for example, immediately check
+     if the sort is immediate or void.  But we should do that in those places,
+     or as part of our higher-level defaulting story. *)
   | Ok s -> Layout.default_to_value (Layout.of_sort s)
   | Error err -> raise (Error (loc,Layout_sort {lloc; typ; err}))
 
@@ -935,11 +945,16 @@ let update_label_layouts env loc lbls named =
      update the kind with the layouts) and inlined records *)
   (* CR ccasinghino it wouldn't be too hard to support records that are all
      void.  just needs a bit of refactoring in translcore *)
+  let update =
+    match named with
+    | None -> fun _ _ -> ()
+    | Some layouts -> fun idx layout -> layouts.(idx) <- layout
+  in
   let _, lbls =
     List.fold_left (fun (idx,lbls) ({Types.ld_type;ld_loc} as lbl) ->
       check_representable env ld_loc Record ld_type;
       let ld_layout = Ctype.type_layout env ld_type in
-      Option.iter (fun layouts -> layouts.(idx) <- ld_layout) named;
+      update idx ld_layout;
       (idx+1, {lbl with ld_layout} :: lbls)
     ) (0,[]) lbls
   in
@@ -961,6 +976,17 @@ let update_constructor_arguments_layouts env loc cd_args layouts =
 
 (* CJC XXX I believe this will fail to infer immediate appropriately for
    mutually recursive datatypes. *)
+(* This function updates layout stored in kinds with more accurate layouts.
+   It is called after the circularity checks and the delayed layout checks
+   have happened, so we can fully compute layouts of types.
+
+   For @@unboxed types in particular, this function is an important part
+   of correctness.  Before this function is called, the layout recorded in
+   kinds in [Variant_unboxed] and [Record_unboxed] is just a copy of any
+   provided layout annotation, with no checking.  Here we replace it with
+   an accurate layout computed from the inner type (which is checked
+   against the annotation at the end of [transl_type_decl]).
+*)
 let update_decl_layout env decl =
   let update_record_kind loc lbls rep =
     match lbls, rep with
