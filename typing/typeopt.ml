@@ -190,6 +190,9 @@ let value_kind_of_value_layout layout =
 
 (* Invariant: [value_kind] functions may only be called on types with layout
    value. *)
+(* CR layout v5 (and maybe other versions): As we relax the requirement that
+   various things have to be values, many recursive calls in [value_kind]
+   need to be updated to check layouts. *)
 let rec value_kind env ~visited ~depth ~num_nodes_visited ty
   : int * value_kind =
   let[@inline] cannot_proceed () =

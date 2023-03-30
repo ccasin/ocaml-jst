@@ -1017,6 +1017,43 @@ val id17 : 'a t17 -> 'a t17 = <fun>
 val f17 : 'a -> 'a = <fun>
 |}];;
 
+(* Test 18: non-value coercions *)
+let f18 () =
+  let x : t_void = assert false in
+  let _y = (x :> t_void) in
+  ();;
+[%%expect{|
+val f18 : unit -> unit = <fun>
+|}];;
+
+(* Test 19: Non-value bodies for let module *)
+let f19 () =
+  let x : t_void = assert false in
+  let _y =
+    let module M = struct end in
+    x
+  in
+  ();;
+[%%expect{|
+val f19 : unit -> unit = <fun>
+|}];;
+
+(* Test 20: Non-value unpack body *)
+module type M20 = sig end
+
+let f20 () =
+  let x : t_void = assert false in
+  let _y =
+    let (module M) = (module struct end : M20) in
+    x
+  in
+  ();;
+[%%expect{|
+module type M20 = sig end
+val f20 : unit -> unit = <fun>
+|}];;
+
+
 (* CR ccasinghino: Once we allow non-value top-level module definitions, add
    tests showing that things get defaulted to value.
 

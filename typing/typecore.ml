@@ -864,7 +864,8 @@ and build_as_type_aux ~refine ~mode (env : Env.t ref) p =
       let lbl = snd3 (List.hd lpl) in
       if lbl.lbl_private = Private then p.pat_type, mode else
       (* The layout here is filled in via unification with [ty_res] in
-         [unify_pat] *)
+         [unify_pat].  This should be a sort variable and could be now (but make
+         sure it gets defaulted at some point.) *)
       let ty = newvar Layout.any in
       let ppl = List.map (fun (_, l, p) -> l.lbl_num, p) lpl in
       let do_label lbl =
@@ -4641,7 +4642,7 @@ and type_expect_
             begin_def ();
             let arg = type_exp env expected_mode sarg in
             end_def ();
-            let tv = newvar Layout.value in
+            let tv = newvar Layout.any in
             let gen = generalizable (get_level tv) arg.exp_type in
             unify_var env tv arg.exp_type;
             begin match arg.exp_desc, !self_coercion, get_desc ty' with
@@ -4901,7 +4902,7 @@ and type_expect_
           assert false
       end
   | Pexp_letmodule(name, smodl, sbody) ->
-      let ty = newvar Layout.value in
+      let ty = newvar Layout.any in
       (* remember original level *)
       begin_def ();
       let modl, pres, id, new_env = Typetexp.TyVarEnv.with_local_scope begin fun () ->
@@ -5127,6 +5128,7 @@ and type_expect_
         match sands with
         | [] -> spat_acc, ty_acc
         | { pbop_pat = spat; _} :: rest ->
+            (* CR layouts v5: eliminate value requirement *)
             let ty = newvar Layout.value in
             let loc = { slet.pbop_op.loc with Location.loc_ghost = true } in
             let spat_acc = Ast_helper.Pat.tuple ~loc [spat_acc; spat] in
@@ -5138,13 +5140,16 @@ and type_expect_
       let op_path, op_desc = type_binding_op_ident env slet.pbop_op in
       let op_type = instance op_desc.val_type in
       let spat_params, ty_params =
+        (* CR layouts v5: eliminate value requirement *)
         loop slet.pbop_pat (newvar Layout.value) sands
       in
+      (* CR layouts v2: eliminate value requirement *)
       let ty_func_result = newvar Layout.value in
       let arrow_desc = Nolabel, Alloc_mode.global, Alloc_mode.global in
       let ty_func =
         newty (Tarrow(arrow_desc, newmono ty_params, ty_func_result, commu_ok))
       in
+      (* CR layouts v2: eliminate value requirement *)
       let ty_result = newvar Layout.value in
       let ty_andops = newvar Layout.value in
       let ty_op =
@@ -6030,6 +6035,7 @@ and type_apply_arg env ~app_loc ~funct ~index ~position ~partial_app (lbl, arg) 
         type_expect env expected_mode sarg (mk_expected ty_arg_mono)
       in
       if is_optional lbl then
+        (* CR layouts v5: relax value requirement *)
         unify_exp env arg (type_option(newvar Layout.value));
       (lbl, Arg (arg, expected_mode.mode))
   | Arg (Known_arg { sarg; ty_arg; ty_arg0;
@@ -6303,7 +6309,7 @@ and type_statement ?explanation env sexp =
 and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
     env (expected_mode : expected_mode) (unpacks : to_unpack list) sbody expected_ty =
   if unpacks = [] then type_expect ?in_function env expected_mode sbody expected_ty else
-  let ty = newvar Layout.value in
+  let ty = newvar Layout.any in
   (* remember original level *)
   let extended_env, tunpacks =
     List.fold_left (fun (env, tunpacks) unpack ->
@@ -6903,6 +6909,7 @@ and type_andops env sarg sands expected_ty =
         if !Clflags.principal then begin_def ();
         let op_path, op_desc = type_binding_op_ident env sop in
         let op_type = op_desc.val_type in
+        (* CR layouts v2: relax value requirements *)
         let ty_arg = newvar Layout.value in
         let ty_rest = newvar Layout.value in
         let ty_result = newvar Layout.value in
@@ -7264,6 +7271,11 @@ let type_let existential_ctx env rec_flag spat_sexp_list =
 
 (* Typing of toplevel expressions *)
 
+(* CR layouts: In many places, we call this (or various related functions like
+   type_expect) and then immediately call `type_layout` to find the layout of
+   the resulting type.  This feels like it could be improved - perhaps
+   type_expression could cheaply keep track of the layout of the type it's
+   computing and return it? *)
 let type_expression env sexp =
   Typetexp.TyVarEnv.reset ();
   begin_def();

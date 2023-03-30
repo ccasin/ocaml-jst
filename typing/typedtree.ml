@@ -856,6 +856,12 @@ let rec iter_bound_idents
 type full_bound_ident_action =
   Ident.t -> string loc -> type_expr -> value_mode -> sort -> unit
 
+(* The intent is that the sort should be the sort of the type of the pattern.
+   It's used to avoid computing layouts from types.  `f` then gets passed
+   the sorts of the variables.
+
+   This is occasionally used in places where we don't actually know
+   about the sort of the pattern but `f` doesn't care about the sorts. *)
 let iter_pattern_full ~both_sides_of_or f sort pat =
   let rec loop :
     type k . full_bound_ident_action -> sort -> k general_pattern -> _ =

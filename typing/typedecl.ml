@@ -1016,6 +1016,7 @@ let update_decl_layout env decl =
     | [{Types.cd_args;cd_loc} as cstr], Variant_unboxed _ -> begin
         match cd_args with
         | Cstr_tuple [ty,_] -> begin
+            (* CR layouts: check_representable should return the sort *)
             check_representable env cd_loc Cstr_tuple ty;
             let layout = Ctype.type_layout env ty in
             cstrs, Variant_unboxed layout
@@ -1426,6 +1427,7 @@ let transl_type_decl env rec_flag sdecl_list =
       ) tdecls decls
   in
   (* Check layout annotations *)
+  (* CR layouts: can we skip this sometimes?  abbreviations? *)
   List.iter (fun tdecl ->
     let layout =
       Layout.of_const_option ~default:Layout.any tdecl.typ_layout_annotation

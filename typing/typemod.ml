@@ -2568,8 +2568,9 @@ and type_structure ?(toplevel = None) funct_body anchor env sstr =
               List.iter
                 (fun (loc, mode, sort) ->
                    Typecore.escape ~loc ~env:newenv ~reason:Other mode;
-                   (* Note that this layout check has the effect of defaulting
-                      the sort of top-level bindings to value. *)
+                   (* CR layouts v5: this layout check has the effect of
+                      defaulting the sort of top-level bindings to value, which
+                      will change. *)
                    if not (Layout.(equate (of_sort sort) value)) then
                      raise (Error (loc, env,
                                    Toplevel_nonvalue (Ident.name id,sort)))
@@ -3100,6 +3101,7 @@ let type_package env m p fl =
   in
   List.iter
     (fun (n, ty) ->
+       (* CR layouts v5: relax value requirement. *)
       try Ctype.unify env ty (Ctype.newvar Layout.value)
       with Ctype.Unify _ ->
         raise (Error(modl.mod_loc, env, Scoping_pack (n,ty))))

@@ -1146,6 +1146,8 @@ let rec copy ?partial ?keep_names scope ty =
           else generic_level
     in
     if forget <> generic_level then
+      (* XXX layouts: we probably need an accurate layout here?  But it's a
+         pain. *)
       newty2 ~level:forget (Tvar { name = None; layout = Layout.any })
     else
     let t = newstub ~scope:(get_scope ty) Layout.any in
@@ -1213,7 +1215,9 @@ let rec copy ?partial ?keep_names scope ty =
                       if not (eq_type more more') then
                         more' (* we've already made a copy *)
                       else
-                        newvar Layout.any
+                        (* XXX layouts: we probably need an accurate layout
+                           here?  But it's a pain. *)
+                        newvar Layout.value
                     in
                     let not_reither (_, f) =
                       match row_field_repr f with
@@ -1436,6 +1440,7 @@ let rec copy_sep ~cleanup_scope ~fixed ~free ~bound ~may_share
   let univars = free ty in
   if is_Tvar ty || may_share && TypeSet.is_empty univars then
     if get_level ty <> generic_level then ty else
+    (* layout not consulted during copy_sep, so Any is safe *)
     let t = newstub ~scope:(get_scope ty) Layout.any in
     delayed_copy :=
       lazy (Transient_expr.set_stub_desc t (Tlink (copy cleanup_scope ty)))
@@ -1957,6 +1962,8 @@ let rec estimate_type_layout env ty =
    it's a valid argument to [t].  (We believe there are still loops like this
    that can occur, though, and may need a more principled solution later).
 *)
+(* CR layouts: if layout is any, we can just be done, except that we try to
+   return an accurate layout.  Most callers don't use that layout though. *)
 let rec constrain_type_layout ~fixed env ty layout fuel =
   let constrain_unboxed ty =
     match estimate_type_layout env ty with
