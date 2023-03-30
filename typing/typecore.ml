@@ -4163,20 +4163,12 @@ and type_expect_
           tuple_pat_mode mode modes, mode_tuple mode modes
       in
       begin_def ();
-      let arg = type_exp env arg_expected_mode sarg in
-      end_def ();
-      let sort =
-        match type_sort env arg.exp_type with
-        | Ok s -> s
-        | Error err ->
-          (* CJC XXX errors: gross *)
-          let err =
-            Errortrace.(unification_error
-                          ~trace:[Bad_layout_sort (arg.exp_type,err)])
-          in
-          raise (Error(arg.exp_loc, env,
-                       Expr_type_clash(err, None, Some (arg.exp_desc))))
+      let sort = Sort.new_var () in
+      let arg =
+        type_expect env arg_expected_mode sarg
+          (mk_expected (newvar (Layout.of_sort sort)))
       in
+      end_def ();
       if maybe_expansive arg then lower_contravariant env arg.exp_type;
       generalize arg.exp_type;
       let cases, partial =
@@ -4207,6 +4199,7 @@ and type_expect_
       let arity = List.length sexpl in
       assert (arity >= 2);
       let alloc_mode = register_allocation expected_mode in
+      (* CR layouts v5: non-values in tuples *)
       let subtypes = List.map (fun _ -> newgenvar Layout.value) sexpl in
       let to_unify = newgenty (Ttuple subtypes) in
       with_explanation (fun () ->
@@ -6966,6 +6959,7 @@ and type_generic_array
       sargl
   =
   let alloc_mode = register_allocation expected_mode in
+  (* CR layouts v4: non-values in arrays *)
   let ty = newgenvar Layout.value in
   let to_unify = type_ ty in
   with_explanation explanation (fun () ->
