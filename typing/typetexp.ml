@@ -478,8 +478,8 @@ and transl_type_aux env policy mode styp =
           let arg_mode = Alloc_mode.of_const arg_mode in
           let ret_mode = Alloc_mode.of_const ret_mode in
           let arrow_desc = (l, arg_mode, ret_mode) in
-          (* Layouts: For now, we require function arguments and returns to have
-             layout value.  See comment in [Ctype.filter_arrow].  *)
+          (* CR layouts v2: For now, we require function arguments and returns
+             to have layout value.  See comment in [Ctype.filter_arrow].  *)
           begin match
             constrain_type_layout env arg_ty Layout.value,
             constrain_type_layout env ret_cty.ctyp_type Layout.value
@@ -504,6 +504,7 @@ and transl_type_aux env policy mode styp =
     assert (List.length stl >= 2);
     let ctys = List.map (transl_type env policy Alloc_mode.Global) stl in
     List.iter (fun {ctyp_type; ctyp_loc} ->
+      (* CR layouts v5: remove value requirement *)
       match constrain_type_layout env ctyp_type Layout.value with
       | Ok _ -> ()
       | Error e ->
@@ -683,6 +684,8 @@ and transl_type_aux env policy mode styp =
                    List.map (transl_type env policy Alloc_mode.Global) stl)
             in
             List.iter (fun {ctyp_type; ctyp_loc} ->
+              (* CR layouts: at some point we'll allow different layouts in
+                 polymorphic variants. *)
               match constrain_type_layout env ctyp_type Layout.value with
               | Ok _ -> ()
               | Error e ->

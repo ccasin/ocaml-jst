@@ -255,7 +255,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
         List.fold_left
           (fun (num_nodes_visited, kinds) field ->
              let num_nodes_visited = num_nodes_visited + 1 in
-             (* CR ccasinghino - this is fine because voids are not allowed in
+             (* CR layouts v5 - this is fine because voids are not allowed in
                 tuples.  When they are, we probably need to add a list of
                 layouts to Ttuple, as in variant_representation and
                 record_representation *)
