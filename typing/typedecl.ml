@@ -923,10 +923,14 @@ let default_decls_layout decls =
 
 
 (* Makes sure a type is representable.  Will lower "any" to "value". *)
-(* CR ccasinghino: In the places where this is used, we first call this to
+(* CR layouts: In the places where this is used, we first call this to
    ensure a type is representable, and then call [Ctype.type_layout] to get the
    most precise layout.  These could be combined into some new function
    [Ctype.type_layout_representable] that avoids duplicated work *)
+(* CR layouts: Many places where [check_representable] is called in this file
+   should be replaced with checks at the places where values of those types are
+   constructed.  We've been conservative here in the first version. This is the
+   same issue as with arrows. *)
 let check_representable env loc lloc typ =
   match Ctype.type_sort env typ with
   (* CR layouts: This is not the right place to default to value.  Some callers
@@ -950,17 +954,17 @@ let update_label_layouts env loc lbls named =
     | None -> fun _ _ -> ()
     | Some layouts -> fun idx layout -> layouts.(idx) <- layout
   in
-  let _, lbls =
-    List.fold_left (fun (idx,lbls) ({Types.ld_type;ld_loc} as lbl) ->
+  let lbls =
+    List.mapi (fun idx ({Types.ld_type; ld_loc} as lbl) ->
       check_representable env ld_loc Record ld_type;
       let ld_layout = Ctype.type_layout env ld_type in
       update idx ld_layout;
-      (idx+1, {lbl with ld_layout} :: lbls)
-    ) (0,[]) lbls
+      {lbl with ld_layout}
+    ) lbls
   in
   if List.for_all (fun l -> Layout.(equate void l.ld_layout)) lbls then
     raise (Error (loc, Layout_empty_record))
-  else List.rev lbls
+  else lbls
 
 let update_constructor_arguments_layouts env loc cd_args layouts =
   match cd_args with
@@ -974,8 +978,6 @@ let update_constructor_arguments_layouts env loc cd_args layouts =
     layouts.(0) <- Layout.value;
     Types.Cstr_record lbls
 
-(* CJC XXX I believe this will fail to infer immediate appropriately for
-   mutually recursive datatypes. *)
 (* This function updates layout stored in kinds with more accurate layouts.
    It is called after the circularity checks and the delayed layout checks
    have happened, so we can fully compute layouts of types.
@@ -1118,6 +1120,8 @@ let check_well_founded env loc path to_check ty =
 let check_well_founded_manifest env loc path decl =
   if decl.type_manifest = None then () else
   let args =
+    (* The layouts here shouldn't matter for the purposes of
+       [check_well_founded] *)
     List.map (fun _ -> Ctype.newvar Layout.any) decl.type_params
   in
   check_well_founded env loc path (Path.same path) (Ctype.newconstr path args)
@@ -1424,8 +1428,7 @@ let transl_type_decl env rec_flag sdecl_list =
   (* Check layout annotations *)
   List.iter (fun tdecl ->
     let layout =
-      Layout.of_const_option ~default:Layout.any
-        tdecl.typ_layout_annotation
+      Layout.of_const_option ~default:Layout.any tdecl.typ_layout_annotation
     in
     match Ctype.check_decl_layout final_env tdecl.typ_type layout with
     | Ok _ -> ()

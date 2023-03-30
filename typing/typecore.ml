@@ -863,6 +863,8 @@ and build_as_type_aux ~refine ~mode (env : Env.t ref) p =
   | Tpat_record (lpl,_) ->
       let lbl = snd3 (List.hd lpl) in
       if lbl.lbl_private = Private then p.pat_type, mode else
+      (* The layout here is filled in via unification with [ty_res] in
+         [unify_pat] *)
       let ty = newvar Layout.any in
       let ppl = List.map (fun (_, l, p) -> l.lbl_num, p) lpl in
       let do_label lbl =
@@ -938,6 +940,7 @@ let solve_Ppat_tuple (type a) ~refine ~alloc_mode loc env (args : a list) expect
       List.init arity (fun _ -> alloc_mode.mode)
   in
   let ann =
+    (* CR layouts v5: restriction to value here to be relaxed. *)
     List.map2
       (fun p mode -> (p, newgenvar Layout.value, simple_pat_mode mode))
       args arg_modes
@@ -1115,6 +1118,7 @@ let solve_Ppat_constraint ~refine loc env mode sty expected_ty =
   (cty, ty, expected_ty')
 
 let solve_Ppat_variant ~refine loc env tag no_arg expected_ty =
+  (* CR layouts v5: relax the restriction to value here. *)
   let arg_type = if no_arg then [] else [newgenvar Layout.value] in
   let fields = [tag, rf_either ~no_arg arg_type ~matched:true] in
   let make_row more =
@@ -2587,6 +2591,7 @@ let type_pattern_list
 let type_class_arg_pattern cl_num val_env met_env l spat =
   if !Clflags.principal then Ctype.begin_def ();
   reset_pattern false;
+  (* CR layouts: will change when we relax layout restrictions in classes. *)
   let nv = newvar Layout.value in
   let alloc_mode = simple_pat_mode Value_mode.global in
   let pat =
@@ -2597,6 +2602,7 @@ let type_class_arg_pattern cl_num val_env met_env l spat =
     finalize_variants pat;
   end;
   List.iter (fun f -> f()) (get_ref pattern_force);
+  (* CR layouts v5: value restriction here to be relaxed *)
   if is_optional l then
     unify_pat (ref val_env) pat (type_option (newvar Layout.value));
   let pvs = !pattern_variables in
@@ -2873,6 +2879,7 @@ let collect_unknown_apply_args env funct ty_fun mode_fun rev_args sargs ret_tvar
           let ty_fun = expand_head env ty_fun in
           match get_desc ty_fun with
           | Tvar _ ->
+              (* CR layouts v2: value requirement to be relaxed *)
               let ty_arg_mono = newvar Layout.value in
               let ty_arg = newmono ty_arg_mono in
               let ty_res = newvar Layout.value in
@@ -3292,6 +3299,7 @@ let is_local_returning_function cases =
 let rec approx_type env sty =
   match sty.ptyp_desc with
   | Ptyp_arrow (p, ({ ptyp_desc = Ptyp_poly _ } as arg_sty), sty) ->
+      (* CR layouts v5: value requirement here to be relaxed *)
       if is_optional p then newvar Layout.value
       else begin
         let arg_mode = Typetexp.get_alloc_mode arg_sty in
