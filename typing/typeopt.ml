@@ -345,18 +345,9 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
       num_nodes_visited,
       Pvariant { consts = []; non_consts = [0, List.rev fields] }
     end
-  | Tvariant _ ->
-    (* XXX layouts: the "check_type_layout" call below is cheap because we have
-       a Tvariant, but we otherwise try to avoid calling that function in value
-       kind - should we do something different?
-
-       Just make a second function called both here and in check_type_layout
-       handling the TVariant case, so make it clearer that this is efficient.
-    *)
+  | Tvariant row ->
     num_nodes_visited,
-    if Result.is_ok (Ctype.check_type_layout ~reason:V1_safety_check
-                       env scty Layout.immediate)
-    then Pintval else Pgenval
+    if Ctype.tvariant_not_immediate row then Pgenval else Pintval
   | _ ->
     num_nodes_visited, Pgenval
 

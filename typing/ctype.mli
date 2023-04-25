@@ -470,6 +470,11 @@ val get_unboxed_type_approximation : Env.t -> type_expr -> type_expr
        [get_unboxed_type_representation], but doesn't indicate whether the type
        was fully expanded or not. *)
 
+(* Given the row from a variant type, determine if it is immediate.  Currently
+   just checks that all constructors have no arguments, doesn't consider
+   void. *)
+val tvariant_not_immediate : row_desc -> bool
+
 (* Cheap upper bound on layout.  Will not expand unboxed types - call
    [type_layout] if that's needed. *)
 val estimate_type_layout : Env.t ->  type_expr -> layout

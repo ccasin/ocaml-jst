@@ -1916,6 +1916,17 @@ let layout_of_result = function
   | Layout l -> l
   | TyVar (l,_) -> l
 
+let tvariant_not_immediate row =
+  (* if all labels are devoid of arguments, not a pointer *)
+  (* CR layouts v5: Polymorphic variants with all void args can probably
+     be immediate, but we don't allow them to have void args right now. *)
+  not (row_closed row)
+  || List.exists
+    (fun (_,field) -> match row_field_repr field with
+      | Rpresent (Some _) | Reither (false, _, _) -> true
+      | _ -> false)
+    (row_fields row)
+
 (* We assume here that [get_unboxed_type_representation] has already been
    called, if the type is a Tconstr.  This allows for some optimization by
    callers (e.g., skip expanding if the kind tells them enough).
@@ -1933,16 +1944,7 @@ let rec estimate_type_layout env ty =
       | exception Not_found -> Layout (missing_cmi_any p)
     end
   | Tvariant row ->
-      (* if all labels are devoid of arguments, not a pointer *)
-      if
-        (* CR layouts v5: Polymorphic variants with all void args can probably
-           be immediate, but we don't allow them to have void args right now. *)
-        not (row_closed row)
-        || List.exists
-          (fun (_,field) -> match row_field_repr field with
-            | Rpresent (Some _) | Reither (false, _, _) -> true
-            | _ -> false)
-          (row_fields row)
+      if tvariant_not_immediate row
       then Layout value
       else Layout immediate
   | Tvar { layout } -> TyVar (layout, ty)
