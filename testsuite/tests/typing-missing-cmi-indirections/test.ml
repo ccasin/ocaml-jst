@@ -1,15 +1,16 @@
 (* TEST
-readonly_files = "foo.mli bar.mli baz.ml"
+readonly_files = "missing.mli present.mli client.ml"
 * setup-ocamlc.byte-build-env
 ** ocamlc.byte
-module = "foo.mli"
+module = "missing.mli"
 *** ocamlc.byte
-module = "bar.mli"
+flags = "-open Missing"
+module = "present.mli"
 **** script
-script = "rm foo.cmi"
+script = "rm missing.cmi"
 ***** ocamlc.byte
 flags = "-c -i"
-module = "baz.ml"
+module = "client.ml"
 ocamlc_byte_exit_status = "2"
 ****** check-ocamlc.byte-output
 *)

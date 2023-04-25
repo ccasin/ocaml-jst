@@ -37,6 +37,10 @@ module Sort : sig
   val void : t
   val value : t
 
+  (** These names are generated lazily and only when this function is called,
+      and are not guaranteed to be efficient to create *)
+  val var_name : var -> string
+
   (** This checks for equality, and sets any variables to make two sorts
       equal, if possible *)
   val equate : t -> t -> bool
@@ -83,9 +87,13 @@ module Layout : sig
   val equal_const : const -> const -> bool
 
   (** This layout is the top of the layout lattice. All types have layout [any].
-      But we cannot compile run-time manipulations of values of types with layout
-      [any]. *)
+      But we cannot compile run-time manipulations of values of types with
+      layout [any]. *)
   val any : t
+
+  (** This is a variant of the [any] layout used when we have to fill it in
+      because there's a missing .cmi file for the specified type. *)
+  val missing_cmi_any : Path.t -> t
 
   (** Value of types of this layout are not retained at all at runtime *)
   val void : t
@@ -142,9 +150,36 @@ module Layout : sig
            resort" check to indicate that we shouldn't be seeing this? *)
 
   module Violation : sig
-    type nonrec t =
+    type message =
       | Not_a_sublayout of t * t
       | No_intersection of t * t
+
+    type violation = private
+      { message : message
+      ; missing_cmi : bool
+          (** Was this error caused by a missing .cmi file?  This is redundant
+              with information stored in the [message], but is more easily
+              inspectable by external code.  The error-printing code does not
+              inspect this value; it's only used for program logic. *)
+      }
+
+    val not_a_sublayout : t -> t -> violation
+
+    val no_intersection : t -> t -> violation
+
+    (* CR layouts: Is [missing_cmi] really the best thing?  Maybe some functions
+       need to return success | error | missing_cmi. *)
+
+    (** If we later discover that the left-hand layout was from a missing .cmi
+        file, and if that layout is [any], this function will update that layout
+        to report what type caused that (a la [missing_cmi_any]). *)
+    val add_missing_cmi_for_lhs :
+      missing_cmi_for:Path.t -> violation -> violation
+
+    (* CR layouts: The [offender] arguments below are always
+       [Printtyp.type_expr], so we should either stash that in a ref (like with
+       [set_printtyp_path] below) or just move all the printing machinery
+       downstream of both [Layouts] and [Printtyp]. *)
 
     (* CR layouts: Having these options for printing a violation was a choice
        made based on the needs of expedient debugging during development, but
@@ -152,16 +187,22 @@ module Layout : sig
     (** Prints a violation and the thing that had an unexpected layout
         ([offender], which you supply an arbitrary printer for). *)
     val report_with_offender :
-      offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
+      offender:(Format.formatter -> unit) ->
+      Format.formatter -> violation -> unit
 
     (** Like [report_with_offender], but additionally prints that the issue is
         that a representable layout was expected. *)
     val report_with_offender_sort :
-      offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
+      offender:(Format.formatter -> unit) ->
+      Format.formatter -> violation -> unit
 
     (** Simpler version of [report_with_offender] for when the thing that had an
         unexpected layout is available as a string. *)
-    val report_with_name : name:string -> Format.formatter -> t -> unit
+    val report_with_name : name:string -> Format.formatter -> violation -> unit
+
+    (** Provides the [Printtyp.path] formatter back up the dependency chain to
+        this module. *)
+    val set_printtyp_path : (Format.formatter -> Path.t -> unit) -> unit
   end
 
   (******************************)
@@ -220,24 +261,30 @@ module Layout : sig
 
   (** This checks for equality, and sets any variables to make two layouts
       equal, if possible. e.g. [equate] on a var and [value] will set the
-      variable to be [value] *)
+      variable to be [value].
+
+      This function ignores the [missing_cmi_for] medatadata for [any]s. *)
   val equate : t -> t -> bool
 
   (** This checks for equality, but has the invariant that it can only be called
       when there is no need for unification; e.g. [equal] on a var and [value]
       will crash.
 
+      This function ignores the [missing_cmi_for] medatadata for [any]s.
+
       XXX ASZ: At the moment, this is actually the same as [equate]! *)
   val equal : t -> t -> bool
 
   (** Finds the intersection of two layouts, constraining sort variables to
-      create one if needed, or returns a [Violation.t] if an intersection does
-      not exist.  Can update the layouts.  The returned layout's history
-      consists of the provided reason followed by the history of the first
-      layout argument.  That is, due to histories, this function is asymmetric;
-      it should be thought of as modifying the first layout to be the
-      intersection of the two, not something that modifies the second layout. *)
-  val intersection : reason:reason -> t -> t -> (t, Violation.t) Result.t
+      create one if needed, or returns a [Violation.violation] if an
+      intersection does not exist.  Can update the layouts.  The returned
+      layout's history consists of the provided reason followed by the history
+      of the first layout argument.  That is, due to histories, this function is
+      asymmetric; it should be thought of as modifying the first layout to be
+      the intersection of the two, not something that modifies the second
+      layout. *)
+  val intersection :
+    reason:reason -> t -> t -> (t, Violation.violation) Result.t
 
   (** [sub t1 t2] returns [Ok t1] iff [t1] is a sublayout of
     of [t2].  The current hierarchy is:
@@ -246,7 +293,7 @@ module Layout : sig
     Any > Sort Void
 
     Returns [Error _] if the coercion is not possible. *)
-  val sub : t -> t -> (unit, Violation.t) result
+  val sub : t -> t -> (unit, Violation.violation) result
 
   (*********************************)
   (* defaulting *)

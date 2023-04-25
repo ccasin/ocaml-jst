@@ -150,7 +150,8 @@ let newpersty desc =
   create_expr
     desc ~level:generic_level ~scope:Btype.lowest_level ~id:!new_id
 
-(* ensure that all occurrences of 'Tvar None' are physically shared *)
+(* ensure that all occurrences of 'Tvar None' are physically shared when saving
+   artifacts *)
 let tvar_none_any = Tvar { name = None; layout = Layout.any }
 let tvar_none_imm = Tvar { name = None; layout = Layout.immediate }
 let tvar_none_imm64 = Tvar { name = None; layout = Layout.immediate64 }
@@ -159,8 +160,7 @@ let tvar_none_void = Tvar { name = None; layout = Layout.void }
 
 let tunivar_none_any = Tunivar { name = None; layout = Layout.any }
 let tunivar_none_imm = Tunivar { name = None; layout = Layout.immediate }
-let tunivar_none_imm64 =
-  Tunivar { name = None; layout = Layout.immediate64 }
+let tunivar_none_imm64 = Tunivar { name = None; layout = Layout.immediate64 }
 let tunivar_none_val = Tunivar { name = None; layout = Layout.value }
 let tunivar_none_void = Tunivar { name = None; layout = Layout.void}
 

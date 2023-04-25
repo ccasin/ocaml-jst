@@ -1864,7 +1864,7 @@ let expand_head_opt env ty =
 type unbox_result =
   | Unboxed of type_expr
   | Not_unboxed of type_expr
-  | Missing
+  | Missing of Path.t
 
 (* We use expand_head_opt version of expand_head to get access
    to the manifest type of private abbreviations. *)
@@ -1873,7 +1873,7 @@ let unbox_once env ty =
   match get_desc ty with
   | Tconstr (p, args, _) ->
     begin match Env.find_type p env with
-    | exception Not_found -> Missing
+    | exception Not_found -> Missing p
     | decl ->
       begin match find_unboxed_type decl with
       | None -> Not_unboxed ty
@@ -1893,7 +1893,7 @@ let rec get_unboxed_type_representation env ty_prev ty fuel =
     | Unboxed ty2 ->
       get_unboxed_type_representation env ty ty2 (fuel - 1)
     | Not_unboxed ty2 -> Ok ty2
-    | Missing -> Ok ty_prev
+    | Missing _ -> Ok ty_prev
 
 let get_unboxed_type_representation env ty =
   (* Do not give too much fuel: PR#7424 *)
@@ -1930,7 +1930,7 @@ let rec estimate_type_layout env ty =
   | Tconstr(p, _, _) -> begin
       match Env.find_type p env with
       | { type_kind = k } -> Layout (layout_bound_of_kind k)
-      | exception Not_found -> Layout any
+      | exception Not_found -> Layout (missing_cmi_any p)
     end
   | Tvariant row ->
       (* if all labels are devoid of arguments, not a pointer *)
@@ -1996,18 +1996,21 @@ let rec constrain_type_layout ~reason ~fixed env ty layout fuel =
       let layout_bound =
         begin match Env.find_type p env with
         | { type_kind = k; _ } -> layout_bound_of_kind k
-        | exception Not_found -> Layout.any
+        | exception Not_found -> Layout.missing_cmi_any p
         end
       in
       match Layout.sub layout_bound layout with
       | Ok () as ok -> ok
       | Error _ as err when fuel < 0 -> err
-      | Error _ as err ->
+      | Error violation ->
         begin match unbox_once env ty with
         | Not_unboxed ty -> constrain_unboxed ty
         | Unboxed ty ->
             constrain_type_layout ~reason ~fixed env ty layout (fuel - 1)
-        | Missing -> err
+        | Missing missing_cmi_for ->
+            Error (Layout.Violation.add_missing_cmi_for_lhs
+                     ~missing_cmi_for
+                     violation)
         end
     end
   | Tpoly (ty, _) -> constrain_type_layout ~reason ~fixed env ty layout fuel
@@ -3828,7 +3831,7 @@ type filter_method_failure =
   | Unification_error of unification_error
   | Not_a_method
   | Not_an_object of type_expr
-  | Not_a_value of Layout.Violation.t
+  | Not_a_value of Layout.Violation.violation
 
 exception Filter_method_failed of filter_method_failure
 
@@ -5873,7 +5876,9 @@ let rec nondep_type_rec ?(expand_private=false) env ids ty =
     Tvar _ | Tunivar _ -> ty
   | _ -> try TypeHash.find nondep_hash ty
   with Not_found ->
-    let ty' = newgenstub ~scope:(get_scope ty) Layout.any in
+    let ty' =
+      newgenstub ~scope:(get_scope ty) Layout.any
+    in
     TypeHash.add nondep_hash ty ty';
     match
       match get_desc ty with

@@ -63,9 +63,12 @@ type error =
   | Multiple_native_repr_attributes
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
-  | Layout of Layout.Violation.t
+  | Layout of Layout.Violation.violation
   | Layout_sort of
-      {lloc : layout_sort_loc; typ : type_expr; err : Layout.Violation.t}
+      { lloc : layout_sort_loc
+      ; typ : type_expr
+      ; err : Layout.Violation.violation
+      }
   | Layout_empty_record
   | Separability of Typedecl_separability.error
   | Bad_unboxed_attribute of string
@@ -658,8 +661,7 @@ let transl_declaration env sdecl (id, uid) =
               Array.map
                 (fun cstr ->
                    match Types.(cstr.cd_args) with
-                   | Cstr_tuple args ->
-                     Array.make (List.length args) Layout.any
+                   | Cstr_tuple args -> Array.make (List.length args) Layout.any
                    | Cstr_record _ -> [| Layout.any |])
                 (Array.of_list cstrs)
             )
@@ -671,11 +673,18 @@ let transl_declaration env sdecl (id, uid) =
             if unbox then
               (* This is improved in [update_decl_layout] - see the comment
                  on the Variant_unboxed case above.*)
-              let layout = Option.value layout_annotation ~default:Layout.any in
+              let layout =
+                Option.value
+                  layout_annotation
+                  ~default:Layout.any
+              in
               Record_unboxed layout
             else if List.for_all (fun l -> is_float env l.Types.ld_type) lbls'
             then Record_float
-            else Record_boxed (Array.make (List.length lbls) Layout.any)
+            else Record_boxed
+                   (Array.make
+                      (List.length lbls)
+                      Layout.any)
           in
           Ttype_record lbls, Type_record(lbls', rep)
       | Ptype_open -> Ttype_open, Type_open

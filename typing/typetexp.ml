@@ -54,7 +54,7 @@ type error =
   | Unsupported_extension of Language_extension.t
   | Polymorphic_optional_param
   | Non_value of
-      {vloc : value_loc; typ : type_expr; err : Layout.Violation.t}
+      {vloc : value_loc; typ : type_expr; err : Layout.Violation.violation}
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -442,7 +442,9 @@ and transl_type_aux env policy mode styp =
       begin try
         TyVarEnv.lookup_local name
       with Not_found ->
-        let v = TyVarEnv.new_var ~name Layout.any policy in
+        let v =
+          TyVarEnv.new_var ~name Layout.any policy
+        in
         TyVarEnv.remember_used name v styp.ptyp_loc;
         v
       end

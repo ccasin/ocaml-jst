@@ -121,7 +121,7 @@ type error =
       Datatype_kind.t * Longident.t * (Path.t * Path.t) * (Path.t * Path.t) list
   | Invalid_format of string
   | Not_an_object of type_expr * type_forcing_context option
-  | Not_a_value of Layout.Violation.t * type_forcing_context option
+  | Not_a_value of Layout.Violation.violation * type_forcing_context option
   | Undefined_method of type_expr * string * string list option
   | Undefined_self_method of string * string list
   | Virtual_class of Longident.t
@@ -3388,7 +3388,8 @@ let rec approx_type env sty =
       newty (Ttuple (List.map (approx_type env) args))
   | Ptyp_constr (lid, ctl) ->
       let path, decl = Env.lookup_type ~use:false ~loc:lid.loc lid.txt env in
-      if List.length ctl <> decl.type_arity then newvar Layout.any
+      if List.length ctl <> decl.type_arity then
+        newvar Layout.any
       else begin
         let tyl = List.map (approx_type env) ctl in
         newconstr path tyl
@@ -3936,8 +3937,7 @@ let with_explanation explanation f =
 
 let rec type_exp ?recarg env expected_mode sexp =
   (* We now delegate everything to type_expect *)
-  type_expect ?recarg env expected_mode sexp
-    (mk_expected (newvar Layout.any))
+  type_expect ?recarg env expected_mode sexp (mk_expected (newvar Layout.any))
 
 (* Typing of an expression with an expected type.
    This provide better error messages, and allows controlled
@@ -6424,7 +6424,8 @@ and type_statement ?explanation env sexp =
   begin_def();
   let exp = type_exp env mode_local sexp in
   end_def();
-  let ty = expand_head env exp.exp_type and tv = newvar Layout.any in
+  let ty = expand_head env exp.exp_type
+  and tv = newvar Layout.any in
   if is_Tvar ty && get_level ty > get_level tv then
     Location.prerr_warning
       (final_subexpression exp).exp_loc
@@ -6548,7 +6549,8 @@ and type_cases
   if take_partial_instance <> None then unify_pats (instance ty_arg);
   List.iter (fun { pat_vars; _ } ->
     iter_pattern_variables_type
-      (fun t -> unify_var env (newvar Layout.any) t) pat_vars
+      (fun t -> unify_var env (newvar Layout.any) t)
+      pat_vars
   ) half_typed_cases;
   end_def ();
   generalize ty_arg';

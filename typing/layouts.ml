@@ -24,6 +24,19 @@ module Sort = struct
     | Const of const
   and var = t option ref
 
+  let var_name : var -> string =
+    let next_id = ref 1 in
+    let named = ref [] in
+    fun v ->
+      match List.assq_opt v (!named) with
+      | Some name -> name
+      | None ->
+          let id = !next_id in
+          let name = "'_representable_layout_" ^ Int.to_string id in
+          next_id := id + 1;
+          named := (v, name) :: !named;
+          name
+
   let void = Const Void
   let value = Const Value
 
@@ -157,7 +170,7 @@ module Layout = struct
     | Dummy_reason_result_ignored
 
   type internal =
-    | Any
+    | Any of { missing_cmi_for : Path.t option }
     | Sort of sort
     | Immediate64
     (** We know for sure that values of types of this layout are always immediate
@@ -179,7 +192,9 @@ module Layout = struct
   (******************************)
   (* constants *)
 
-  let any = fresh_layout Any
+  let any' missing_cmi_for = fresh_layout (Any { missing_cmi_for })
+  let any = any' None
+  let missing_cmi_any type_ = any' (Some type_)
   let void = fresh_layout (Sort Sort.void)
   let value = fresh_layout (Sort Sort.value)
   let immediate64 = fresh_layout Immediate64
@@ -242,7 +257,7 @@ module Layout = struct
     | Var of Sort.var
 
   let repr ~default (t : t) : desc = match t.layout with
-    | Any -> Const Any
+    | Any _ -> Const Any
     | Immediate -> Const Immediate
     | Immediate64 -> Const Immediate64
     | Sort s -> begin match Sort.repr ~default s with
@@ -273,7 +288,7 @@ module Layout = struct
 
   let to_string lay = match get lay with
     | Const c -> string_of_const c
-    | Var _ -> "<sort variable>"
+    | Var v -> Sort.var_name v
 
   module Formatting : sig
     open Format
@@ -388,23 +403,125 @@ module Layout = struct
   module Violation = struct
     open Format
 
-    type nonrec t =
+    let printtyp_path = ref (fun _ _ -> assert false)
+
+    let set_printtyp_path f = printtyp_path := f
+
+    type message =
       | Not_a_sublayout of t * t
       | No_intersection of t * t
 
-    let report_general preamble pp_former former ppf t =
-      let l1, problem, l2 = match t with
-        | Not_a_sublayout(l1, l2) -> l1, "is not a sublayout of", l2
-        | No_intersection(l1, l2) -> l1, "does not overlap with", l2
+    type violation =
+      { message : message
+      ; missing_cmi : bool }
+
+    let derive_missing_cmi l1 l2 =
+      let missing_cmi l =
+        match l.layout with
+        | Any { missing_cmi_for = Some _ } ->
+            true
+        | Any { missing_cmi_for = None } | Sort _ | Immediate64 | Immediate ->
+            false
       in
-      fprintf ppf "@[<v>@[<hov 2>%s%a has layout %a,@ which %s %a.@]%a%a@]"
+      missing_cmi l1 || missing_cmi l2
+
+    let not_a_sublayout l1 l2 =
+      { message = Not_a_sublayout (l1, l2)
+      ; missing_cmi = derive_missing_cmi l1 l2
+      }
+
+    let no_intersection l1 l2 =
+      { message = No_intersection (l1, l2)
+      ; missing_cmi = derive_missing_cmi l1 l2
+      }
+
+    let add_missing_cmi_for ~missing_cmi_for = function
+      | { layout = Any { missing_cmi_for = None }; history } ->
+          { layout = Any { missing_cmi_for = Some missing_cmi_for }; history }
+      | t -> t
+
+    let add_missing_cmi_for_lhs ~missing_cmi_for t =
+      { message = begin match t.message with
+          | Not_a_sublayout (lhs, rhs) ->
+              Not_a_sublayout (add_missing_cmi_for ~missing_cmi_for lhs, rhs)
+          | No_intersection (lhs, rhs) ->
+              No_intersection (add_missing_cmi_for ~missing_cmi_for lhs, rhs)
+        end
+      ; missing_cmi = true
+          (* CR layouts: If we decide to keep the [missing_cmi] field, we should
+             think about whether this function ought to check if
+             [add_missing_cmi_for] did anything. *)
+      }
+
+    let missing_cmi_hint ppf type_path =
+      let root_module_name p = p |> Path.head |> Ident.name in
+      let delete_trailing_double_underscore s =
+        if Misc.Stdlib.String.ends_with ~suffix:"__" s
+        then String.sub s 0 (String.length s - 2)
+        else s
+      in
+      (* A heuristic for guessing at a plausible library name for an identifier
+         with a missing .cmi file; definitely less likely to be right outside of
+         Jane Street. *)
+      let guess_library_name : Path.t -> string option = function
+        | Pdot _ as p -> Some begin
+            match root_module_name p with
+            | "Location" | "Longident" -> "ocamlcommon"
+            | mn -> mn
+                    |> String.lowercase_ascii
+                    |> delete_trailing_double_underscore
+          end
+        | Pident _ | Papply _ ->
+            None
+      in
+      Option.iter
+        (fprintf ppf "@,Hint: Try adding \"%s\" to your dependencies.")
+        (guess_library_name type_path)
+
+    let report_missing_cmi ppf = function
+      | { layout = Any { missing_cmi_for = Some p }; _ } ->
+          fprintf ppf "@,No .cmi file found containing %a.%a"
+            (!printtyp_path) p
+            missing_cmi_hint p
+      | _ -> ()
+
+    type problem =
+      | Is_not_representable
+      | Is_not_a_sublayout_of
+      | Does_not_overlap_with
+
+    let message = function
+      | Is_not_representable  -> "is not representable"
+      | Is_not_a_sublayout_of -> "is not a sublayout of"
+      | Does_not_overlap_with -> "does not overlap with"
+
+    let report_second = function
+      | Is_not_representable ->
+          fun _ _ -> ()
+      | Is_not_a_sublayout_of | Does_not_overlap_with ->
+          fun ppf -> fprintf ppf " %a" format
+
+    let report_general preamble pp_former former ppf t =
+      let l1, problem, l2 = match t.message with
+        | Not_a_sublayout(l1, l2) ->
+            l1,
+            (match get l2 with
+             | Var   _ -> Is_not_representable
+             | Const _ -> Is_not_a_sublayout_of),
+            l2
+        | No_intersection(l1, l2) ->
+            l1, Does_not_overlap_with, l2
+      in
+      fprintf ppf "@[<v>@[<hov 2>%s%a has layout %a,@ which %s%a.@]%a%a%a%a@]"
         preamble
         pp_former former
         format l1
-        problem
-        format l2
+        (message problem)
+        (report_second problem) l2
         (format_history ~pp_name:pp_former ~name:former) l1
         (format_history ~pp_name:pp_print_string ~name:"The latter") l2
+        report_missing_cmi l1
+        report_missing_cmi l2
 
     let pp_t ppf x = fprintf ppf "%t" x
 
@@ -423,7 +540,7 @@ end
 
   let equate_or_equal ~allow_mutation (l1 : t) (l2 : t) =
     match l1.layout, l2.layout with
-    | Any, Any -> true
+    | Any _, Any _ -> true
     | Immediate64, Immediate64 -> true
     | Immediate, Immediate -> true
     | Sort s1, Sort s2 -> begin
@@ -435,7 +552,7 @@ end
         | Unequal -> false
         | Equal_no_mutation | Equal_mutated_first | Equal_mutated_second -> true
       end
-    | (Any | Immediate64 | Immediate | Sort _), _ -> false
+    | (Any _ | Immediate64 | Immediate | Sort _), _ -> false
 
   (* XXX ASZ: Switch this back to ~allow_mutation:false *)
   let equal = equate_or_equal ~allow_mutation:true
@@ -443,7 +560,7 @@ end
   let equate = equate_or_equal ~allow_mutation:true
 
   let intersection ~reason l1 l2 =
-    let err = Error (Violation.No_intersection (l1, l2)) in
+    let err = Error (Violation.no_intersection l1 l2) in
     let equality_check is_eq l = if is_eq then Ok l else err in
     (* it's OK not to cache the result of [get], because [get] does path
        compression *)
@@ -461,7 +578,7 @@ end
 
   let sub sub super =
     let ok = Ok () in
-    let err = Error (Violation.Not_a_sublayout (sub,super)) in
+    let err = Error (Violation.not_a_sublayout sub super) in
     let equality_check is_eq = if is_eq then ok else err in
     match get sub, get super with
     | _, Const Any -> ok
@@ -491,10 +608,12 @@ end
     open Format
 
     let internal ppf : internal -> unit = function
-      | Any         -> fprintf ppf "Any"
-      | Sort s      -> fprintf ppf "Sort %a" Sort.Debug_printers.t s
+      | Any { missing_cmi_for } ->
+          fprintf ppf "Any { missing_cmi_for = %a }"
+            (Misc.Stdlib.Option.print Path.print) missing_cmi_for
+      | Sort s -> fprintf ppf "Sort %a" Sort.Debug_printers.t s
       | Immediate64 -> fprintf ppf "Immediate64"
-      | Immediate   -> fprintf ppf "Immediate"
+      | Immediate -> fprintf ppf "Immediate"
 
     let fixed_layout_reason ppf : fixed_layout_reason -> unit = function
       | Let_binding -> fprintf ppf "Let_binding"
