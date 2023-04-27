@@ -111,7 +111,7 @@ type ('a, 'variety) elt =
   | Rec_occur : type_expr * type_expr -> ('a, _) elt
   | Bad_layout : type_expr * Layout.Violation.violation -> ('a, _) elt
   | Bad_layout_sort : type_expr * Layout.Violation.violation -> ('a, _) elt
-  | Unequal_univar_layouts :
+  | Unequal_var_layouts :
       type_expr * layout * type_expr * layout -> ('a, _) elt
 
 type ('a, 'variety) t = ('a, 'variety) elt list
@@ -128,7 +128,7 @@ let map_elt (type variety) f : ('a, variety) elt -> ('b, variety) elt = function
   | Variant _ | Obj _ | Incompatible_fields _ | Rec_occur (_, _) as x -> x
   | Bad_layout _ as x -> x
   | Bad_layout_sort _ as x -> x
-  | Unequal_univar_layouts _ as x -> x
+  | Unequal_var_layouts _ as x -> x
 
 let map f t = List.map (map_elt f) t
 

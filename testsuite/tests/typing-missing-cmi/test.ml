@@ -20,8 +20,3 @@ ocamlc_byte_exit_status = "2"
 ******** check-ocamlc.byte-output
 *)
 
-(* CR layouts: This generates two different missing .cmi errors; we should think
-   about combining them. *)
-
-(* XXX layouts: compare test.compilers.reference with upstream.  Are we happy
-   with error? *)

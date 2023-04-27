@@ -2452,13 +2452,9 @@ let explanation (type variety) intro prev env
       Some (dprintf "@ @[<hov>%a@]"
               (Layout.Violation.report_with_offender_sort
                  ~offender:(fun ppf -> type_expr ppf t)) e)
-  | Errortrace.Unequal_univar_layouts (t1,l1,t2,l2) ->
+  | Errortrace.Unequal_var_layouts (t1,l1,t2,l2) ->
       let fmt_history t = Layout.format_history ~pp_name:type_expr ~name:t in
-      Some (dprintf "@,@[<hov>Universal variables %a and %a should be equal, \
-                     but@ the former has layout %s,@ and the latter has \
-                     layout %s@[<v>%a%a@]@]"
-              type_expr t1 type_expr t2
-              (Layout.to_string l1) (Layout.to_string l2)
+      Some (dprintf "@ because their layouts are different.@;@[<v>%a%a@]"
               (fmt_history t1) l1 (fmt_history t2) l2)
 
 let mismatch intro env trace =
@@ -2516,7 +2512,7 @@ let error trace_format mode subst env tr txt1 ppf txt2 ty_expect_explanation =
       tr
   in
   let layout_error = match Misc.last tr with
-    | Some (Bad_layout _ | Bad_layout_sort _ | Unequal_univar_layouts _) ->
+    | Some (Bad_layout _ | Bad_layout_sort _ | Unequal_var_layouts _) ->
         true
     | Some _ | None ->
         false

@@ -3143,7 +3143,7 @@ let rec unify (env:Env.t ref) t1 t2 =
            Which should probably fail, even though it would be sound to accept.
         *)
         if not (Layout.equal l1 l2) then
-          raise_for Unify (Unequal_univar_layouts (t1, l1, t2, l2));
+          raise_for Unify (Unequal_var_layouts (t1, l1, t2, l2));
         link_type t1 t2
     | (Tconstr (p1, [], a1), Tconstr (p2, [], a2))
           when Path.same p1 p2 (* && actual_mode !env = Old *)
@@ -3226,7 +3226,7 @@ and unify3 env t1 t1' t2 t2' =
           : < foo : 'a . 'a foo bar > = x
       *)
       if not (Layout.equal l1 l2) then
-        raise_for Unify (Unequal_univar_layouts (t1, l1, t2, l2));
+        raise_for Unify (Unequal_var_layouts (t1, l1, t2, l2));
       link_type t1' t2'
   | (Tvar { name; layout }, _) ->
       unify3_var ~var_name:name env layout t1' t2 t2'
@@ -4655,8 +4655,8 @@ let eqtype_subst type_pairs subst t1 l1 t2 l2 =
       !subst
   then ()
   else begin
-    (* XXX layouts: Is this the right error to issue? *)
-    if not (Layout.equal l1 l2) then raise_unexplained_for Equality;
+    if not (Layout.equal l1 l2)
+      then raise_for Equality (Unequal_var_layouts (t1, l1, t2, l2));
     subst := (t1, t2) :: !subst;
     TypePairs.add type_pairs (t1, t2)
   end

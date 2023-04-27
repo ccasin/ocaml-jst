@@ -96,7 +96,7 @@ type ('a, 'variety) elt =
   | Rec_occur : type_expr * type_expr -> ('a, _) elt
   | Bad_layout : type_expr * Layout.Violation.violation -> ('a, _) elt
   | Bad_layout_sort : type_expr * Layout.Violation.violation -> ('a, _) elt
-  | Unequal_univar_layouts :
+  | Unequal_var_layouts :
       type_expr * layout * type_expr * layout -> ('a, _) elt
 
 type ('a, 'variety) t = ('a, 'variety) elt list

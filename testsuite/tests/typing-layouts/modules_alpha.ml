@@ -85,9 +85,10 @@ Error: Signature mismatch:
          type 'a t = 'a list
        is not included in
          type ('a : immediate) t = 'a list
-       The type 'a is not equal to the type 'a0
+       The type ('a : value) is not equal to the type ('a0 : immediate)
+       because their layouts are different.
+
 |}]
-(* XXX layouts: error message *)
 
 (************************************************************************)
 (* Test 2: with type constraints for fixed types (the complicated case of
