@@ -6,4 +6,3 @@ Error: This expression has type M.a but an expression was expected of type
        M.a has layout any, which is not a sublayout of value.
        No .cmi file found containing M.a.
        Hint: Try adding "m" to your dependencies.
-       M.a is abstract because no corresponding cmi file was found in path.

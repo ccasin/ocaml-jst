@@ -2542,7 +2542,8 @@ let error trace_format mode subst env tr txt1 ppf txt2 ty_expect_explanation =
         ty_expect_explanation
         (trace false (incompatibility_phrase trace_format)) tr
         (explain mis);
-      if env <> Env.empty
+      if env <> Env.empty && not layout_error
+       (* the layouts mechanism has its own way of reporting missing cmis *)
       then warn_on_missing_defs env ppf head;
       Conflicts.print_explanations ppf;
       print_labels := true

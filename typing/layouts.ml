@@ -321,8 +321,7 @@ module Layout = struct
       | Function_result -> fprintf ppf "a function result"
       | Tuple_element -> fprintf ppf "a tuple element"
       | Probe -> fprintf ppf "a probe"
-      | Package_hack -> fprintf ppf "involved in the package hack"
-      (* CR layouts: figure out what "package hack" means *)
+      | Package_hack -> fprintf ppf "used as a value in a first-class module"
       | Object -> fprintf ppf "an object"
       | Instance_variable -> fprintf ppf "an instance variable"
       | Object_field -> fprintf ppf "an object field"

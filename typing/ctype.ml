@@ -2038,8 +2038,6 @@ let check_decl_layout ~reason env decl layout =
       | None -> err
       | Some ty -> check_type_layout ~reason env ty layout
 
-(* XXX layouts: locations and better error reporting.  Maybe this should take
-   in a trace_exn? *)
 let constrain_type_layout_exn ~reason env texn ty layout =
   match constrain_type_layout ~reason env ty layout with
   | Ok _ -> ()
