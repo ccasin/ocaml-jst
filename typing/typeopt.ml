@@ -32,7 +32,7 @@ exception Error of Location.t * error
 
 (* Expand a type, looking through ordinary synonyms, private synonyms,
    links, and [@@unboxed] types. The returned type will be therefore be none
-   of these cases. *)
+   of these cases (except in case of missing cmis). *)
 let scrape_ty env ty =
   let ty =
     match get_desc ty with
@@ -199,7 +199,7 @@ let value_kind_of_value_layout layout =
 
 (* Invariant: [value_kind] functions may only be called on types with layout
    value. *)
-(* CR layouts v1.5: However, the current version allows for it to be called on
+(* CR layouts v2: However, the current version allows for it to be called on
    types whose layouts we can not determine due to missing cmis.  This is
    unsound once we have non-value layouts.
 
@@ -272,21 +272,21 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
   end;
   match get_desc scty with
   | Tconstr(p, _, _) when Path.same p Predef.path_int ->
-    (num_nodes_visited, Pintval)
+    num_nodes_visited, Pintval
   | Tconstr(p, _, _) when Path.same p Predef.path_char ->
-    (num_nodes_visited, Pintval)
+    num_nodes_visited, Pintval
   | Tconstr(p, _, _) when Path.same p Predef.path_float ->
-    (num_nodes_visited, Pfloatval)
+    num_nodes_visited, Pfloatval
   | Tconstr(p, _, _) when Path.same p Predef.path_int32 ->
-    (num_nodes_visited, (Pboxedintval Pint32))
+    num_nodes_visited, (Pboxedintval Pint32)
   | Tconstr(p, _, _) when Path.same p Predef.path_int64 ->
-    (num_nodes_visited, (Pboxedintval Pint64))
+    num_nodes_visited, (Pboxedintval Pint64)
   | Tconstr(p, _, _) when Path.same p Predef.path_nativeint ->
-    (num_nodes_visited, (Pboxedintval Pnativeint))
+    num_nodes_visited, (Pboxedintval Pnativeint)
   | Tconstr(p, _, _)
     when (Path.same p Predef.path_array
           || Path.same p Predef.path_floatarray) ->
-    (num_nodes_visited, Parrayval (array_type_kind env ty))
+    num_nodes_visited, Parrayval (array_type_kind env ty)
   | Tconstr(p, _, _) -> begin
     try
       let kind = (Env.find_type p env).type_kind in
@@ -315,20 +315,17 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
       let visited = Numbers.Int.Set.add (get_id ty) visited in
       let depth = depth + 1 in
       let num_nodes_visited, fields =
-        List.fold_left
-          (fun (num_nodes_visited, kinds) field ->
-             let num_nodes_visited = num_nodes_visited + 1 in
-             (* CR layouts v5 - this is fine because voids are not allowed in
-                tuples.  When they are, we probably need to add a list of
-                layouts to Ttuple, as in variant_representation and
-                record_representation *)
-             let num_nodes_visited, kind =
-               value_kind env ~loc ~visited ~depth ~num_nodes_visited field
-             in (num_nodes_visited, kind :: kinds))
-          (num_nodes_visited, []) fields
+        List.fold_left_map (fun num_nodes_visited field ->
+          let num_nodes_visited = num_nodes_visited + 1 in
+          (* CR layouts v5 - this is fine because voids are not allowed in
+             tuples.  When they are, we probably need to add a list of layouts
+             to Ttuple, as in variant_representation and record_representation
+             *)
+          value_kind env ~loc ~visited ~depth ~num_nodes_visited field)
+          num_nodes_visited fields
       in
       num_nodes_visited,
-      Pvariant { consts = []; non_consts = [0, List.rev fields] }
+      Pvariant { consts = []; non_consts = [0, fields] }
     end
   | Tvariant row ->
     num_nodes_visited,
@@ -341,6 +338,9 @@ and value_kind_variant env ~loc ~visited ~depth ~num_nodes_visited
   match rep with
   | Variant_extensible -> assert false
   | Variant_unboxed _ -> begin
+      (* CR layouts v1.5: This should only be reachable in the case of a missing
+         cmi, according to the comment on scrape_ty.  Reevaluate whether it's
+         needed when we deal with missing cmis. *)
       match cstrs with
       | [{cd_args=Cstr_tuple [ty,_]}]
       | [{cd_args=Cstr_record [{ld_type=ty}]}] ->
@@ -354,45 +354,35 @@ and value_kind_variant env ~loc ~visited ~depth ~num_nodes_visited
       let num_nodes_visited = num_nodes_visited + 1 in
       match constructor.cd_args with
       | Cstr_tuple fields ->
-        let num_nodes_visited, _, kinds =
-          List.fold_left
-            (fun (num_nodes_visited, idx, kinds) (ty,_) ->
+        let num_nodes_visited, fields =
+          List.fold_left_map
+            (fun num_nodes_visited (ty, _) ->
                let num_nodes_visited = num_nodes_visited + 1 in
                (* CR layouts v2: when we add other layouts, we'll need to check
                   here that we aren't about to call value_kind on a different
                   sort (we can get this info from the variant representation).
                   For now we rely on the sanity check at the top of value_kind
                   to rule out void. *)
-               let num_nodes_visited, kind =
-                 value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
-               in
-               (num_nodes_visited, idx+1, kind :: kinds))
-            (num_nodes_visited, 0, []) fields
+               value_kind env ~loc ~visited ~depth ~num_nodes_visited ty)
+            num_nodes_visited fields
         in
-        (false, num_nodes_visited), List.rev kinds
+        (false, num_nodes_visited), fields
       | Cstr_record labels ->
-        let is_mutable, num_nodes_visited, _, kinds =
-          List.fold_left
-            (fun (is_mutable, num_nodes_visited, idx, kinds)
-              (label:Types.label_declaration) ->
-              let num_nodes_visited = num_nodes_visited + 1 in
-              let num_nodes_visited, kinds, field_mutable =
-                (* CR layouts v2: same comment as in cstr_tuple case. *)
-                let (num_nodes_visited, kind) =
-                  value_kind env ~loc ~visited ~depth ~num_nodes_visited
-                    label.ld_type
-                in
-                (num_nodes_visited, kind :: kinds, label.ld_mutable)
-              in
+        List.fold_left_map
+          (fun (is_mutable, num_nodes_visited)
+               (label:Types.label_declaration) ->
               let is_mutable =
-                match field_mutable with
+                match label.ld_mutable with
                 | Mutable -> true
                 | Immutable -> is_mutable
               in
-              is_mutable, num_nodes_visited, idx+1, kinds)
-            (false, num_nodes_visited, 0, []) labels
-        in
-        (is_mutable, num_nodes_visited), List.rev kinds
+              let num_nodes_visited = num_nodes_visited + 1 in
+              let num_nodes_visited, field =
+                value_kind env ~loc ~visited ~depth ~num_nodes_visited
+                  label.ld_type
+              in
+              (is_mutable, num_nodes_visited), field)
+          (false, num_nodes_visited) labels
     in
     let is_constant (cstr: Types.constructor_declaration) =
       (* CR layouts v5: This won't count constructors with void args as
@@ -405,31 +395,29 @@ and value_kind_variant env ~loc ~visited ~depth ~num_nodes_visited
       (num_nodes_visited, Pintval)
     else
       let result =
-        List.fold_left (fun (idx,result) constructor ->
+        List.fold_left (fun result constructor ->
           match result with
-          | None -> idx+1, None
+          | None -> None
           | Some (num_nodes_visited,
                   next_const, consts, next_tag, non_consts) ->
             let (is_mutable, num_nodes_visited), fields =
               for_one_constructor constructor ~depth ~num_nodes_visited
             in
-            if is_mutable then idx+1, None
+            if is_mutable then None
             else if List.compare_length_with fields 0 = 0 then
               let consts = next_const :: consts in
-              idx+1,
               Some (num_nodes_visited,
                     next_const + 1, consts, next_tag, non_consts)
             else
               let non_consts = (next_tag, fields) :: non_consts in
-              idx+1,
               Some (num_nodes_visited,
                     next_const, consts, next_tag + 1, non_consts))
-          (0, Some (num_nodes_visited, 0, [], 0, []))
+          (Some (num_nodes_visited, 0, [], 0, []))
           cstrs
       in
       begin match result with
-      | _, None -> (num_nodes_visited, Pgenval)
-      | _, Some (num_nodes_visited, _, consts, _, non_consts) ->
+      | None -> (num_nodes_visited, Pgenval)
+      | Some (num_nodes_visited, _, consts, _, non_consts) ->
         match non_consts with
         | [] -> assert false  (* See [List.for_all is_constant], above *)
         | _::_ ->
@@ -440,58 +428,54 @@ and value_kind_record env ~loc ~visited ~depth ~num_nodes_visited
       (labels : Types.label_declaration list) rep =
   match rep with
   | (Record_unboxed _ | (Record_inlined (_,Variant_unboxed _))) -> begin
-      (* Can't be void due to invariant on value_kind *)
+      (* CR layouts v1.5: This should only be reachable in the case of a missing
+         cmi, according to the comment on scrape_ty.  Reevaluate whether it's
+         needed when we deal with missing cmis. *)
       match labels with
       | [{ld_type}] ->
         value_kind env ~loc ~visited ~depth ~num_nodes_visited ld_type
       | [] | _ :: _ :: _ -> assert false
     end
   | _ -> begin
-      let is_mutable, num_nodes_visited, _, kinds =
-        List.fold_left
-          (fun (is_mutable, num_nodes_visited, idx, kinds)
-            (label:Types.label_declaration) ->
+      let (is_mutable, num_nodes_visited), fields =
+        List.fold_left_map
+          (fun (is_mutable, num_nodes_visited)
+               (label:Types.label_declaration) ->
+            let is_mutable =
+              match label.ld_mutable with
+              | Mutable -> true
+              | Immutable -> is_mutable
+            in
             let num_nodes_visited = num_nodes_visited + 1 in
-            let num_nodes_visited, kinds, field_mutable =
+            let num_nodes_visited, field =
               (* CR layouts v2: when we add other layouts, we'll need to check
                  here that we aren't about to call value_kind on a different
                  sort (we can get this info from the label.ld_layout).  For now
                  we rely on the sanity check at the top of value_kind to rule
                  out void. *)
-              let (num_nodes_visited, kind) =
-                value_kind env ~loc ~visited ~depth ~num_nodes_visited
-                  label.ld_type
-              in
-              (num_nodes_visited, kind :: kinds, label.ld_mutable)
+              value_kind env ~loc ~visited ~depth ~num_nodes_visited
+                label.ld_type
             in
-            let is_mutable =
-              match field_mutable with
-              | Mutable -> true
-              | Immutable -> is_mutable
-            in
-            is_mutable, num_nodes_visited, idx+1, kinds)
-          (false, num_nodes_visited, 0, []) labels
+            (is_mutable, num_nodes_visited), field)
+          (false, num_nodes_visited) labels
       in
-      let kinds = List.rev kinds in
-      match is_mutable, kinds with
-      | true, _ -> (num_nodes_visited, Pgenval)
-      | false, [] -> (num_nodes_visited, Pintval)
-      | false, _ :: _ -> begin
-          let non_consts =
-            match rep with
-            | Record_inlined (Ordinary {runtime_tag}, _) ->
-              [runtime_tag, kinds]
-            | Record_float ->
-              [ Obj.double_array_tag,
-                List.map (fun _ -> Pfloatval) kinds ]
-            | Record_boxed _ ->
-              [0, kinds]
-            | Record_inlined (Extension _, _) ->
-              [0, kinds]
-            | Record_unboxed _ -> assert false
-          in
-          (num_nodes_visited, Pvariant { consts = []; non_consts })
-        end
+      if is_mutable then
+        num_nodes_visited, Pgenval
+      else
+        let non_consts =
+          match rep with
+          | Record_inlined (Ordinary {runtime_tag}, _) ->
+            [runtime_tag, fields]
+          | Record_float ->
+            [ Obj.double_array_tag,
+              List.map (fun _ -> Pfloatval) fields ]
+          | Record_boxed _ ->
+            [0, fields]
+          | Record_inlined (Extension _, _) ->
+            [0, fields]
+          | Record_unboxed _ -> assert false
+        in
+        (num_nodes_visited, Pvariant { consts = []; non_consts })
     end
 
 let value_kind env loc ty =
