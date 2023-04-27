@@ -26,7 +26,7 @@ open Lambda
    the void sanity check.  When we're ready to take that out, remove the errors
    stuff. *)
 type error =
-    Non_value_layout of type_expr * Layout.Violation.violation option
+    Non_value_layout of type_expr * Layout.Violation.violation
 
 exception Error of Location.t * error
 
@@ -41,16 +41,16 @@ let scrape_ty env ty =
   in
   match get_desc ty with
   | Tconstr _ ->
-      let ty' = Ctype.expand_head_opt env (Ctype.correct_levels ty) in
-      begin match get_desc ty' with
+      let ty = Ctype.expand_head_opt env (Ctype.correct_levels ty) in
+      begin match get_desc ty with
       | Tconstr (p, _, _) ->
           begin match find_unboxed_type (Env.find_type p env) with
-          | Some _ -> Ctype.get_unboxed_type_approximation env ty'
-          | None -> ty'
+          | Some _ -> Ctype.get_unboxed_type_approximation env ty
+          | None -> ty
           | exception Not_found -> ty
           end
       | _ ->
-          ty'
+          ty
       end
   | _ -> ty
 
@@ -197,61 +197,8 @@ let value_kind_of_value_layout layout =
     if !Clflags.native_code && Sys.word_size = 64 then Pintval else Pgenval
   | Any | Void -> assert false
 
-(* CR layouts: [value_kind] tries to maintain the invariant that it is only
-   called on values.  With the current set of layout restrictions, there are two
-   reasons this invariant may be violated:
-
-   1) A bug in the type checker that let something with layout [void] or an
-      [any] slip through where it shouldn't have.
-   2) A missing cmi file, so that we can't accurately compute the layout of
-      some type.
-
-   In case 1, we have a bug and want to issue the scary safety check error.
-
-   In case 2, we could issue an error and make the user add the dependency
-   explicitly.  But because value_kind looks at the subcomponents of your type,
-   this can lead to some surprising and unnecessary errors.  Suppose we're
-   computing the value kind for some type:
-
-     type t = int * M.t
-
-   If we're missing the cmi for [M] we can't verify the invariant that
-   [value_kind] is only called on values.  Today, the typechecker enforces that
-   the subcomponents of a pair are values, so we could return a value_kind
-   indicating that this is a block of two values.  But soon we'll allow pairs of
-   unboxed types, and then we have no way to record that this is a block of two
-   things, because we don't know the value_kind of the second thing.  However,
-   we still know the pair itself is a value, so a sound thing to do is fall back
-   and return [Pgenval] for [t].
-
-   On the other hand, if we're asked to compute the value kind for [M.t]
-   directly and are missing the cmi for [M], we really do need to issue an error.
-   This is a bug in the typechecker, which should have checked that the type
-   in question has layout value.
-
-   The implementation of this fallback behavior is combined with the layouts
-   safety check at the top of [value_kind].  The safety check tests whether the
-   type has layout value.  If it see [void], or an [any] that doesn't arise
-   from a missing cmi, it issues the loud error.  If it sees [any] that does
-   arise from a missing cmi, it raises [Missing_cmi_fallback].
-
-   In places where we're computing value_kinds for a bunch of subcomponents of a
-   type, we catch [Missing_cmi_fallback] and just return [Pgenval] for the outer
-   type.  In the top-level [value_kind], we catch it and issue the loud error.
-
-   The plan had been to drop the safety check after a while, but we'll always
-   need to do something about missing cmis, so I think this logic will stick
-   around somewhere.  In the future it will also be possible for subcomponents
-   of types like pairs and polymorphic variants to be non-values for non-error
-   other reaons (as we add other layouts), so I think the recursive calls to
-   value_kind in those cases will need to go through a layout checking
-   function - perhaps we can change [layout] to do that.
-*)
-exception Missing_cmi_fallback
-
-let fallback_if_missing_cmi fallback f =
-  try f () with Missing_cmi_fallback -> fallback
-
+(* Invariant: [value_kind] functions may only be called on types with layout
+   value. *)
 (* CR layout v5 (and maybe other versions): As we relax the requirement that
    various things have to be values, many recursive calls in [value_kind]
    need to be updated to check layouts. *)
@@ -271,6 +218,17 @@ let fallback_if_missing_cmi fallback f =
    When we eliminate the safety check here, we should think again about where
    and how sort variables are defaulted.
 *)
+(* XXX layouts: refactor this to return an error from recursive calls of
+   non-value detected.  We need to fall back sometimes.  For example, suppose:
+   - module B uses type A.t
+   - A.t = t1 * t2
+   - When we compile B, we're missing the cmi for wherever t2 is defined.
+
+   In this case, there's no good way for value_kind to record the information
+   that A.t is a pair while compiling B.  It's kind would be a block of two
+   things, the second of which we don't know the layout of, and we can't have a
+   block whose length we don't know.  Instead, we'll fall back and just return
+   Pgenval for A.t in B. *)
 let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
   : int * value_kind =
   let[@inline] cannot_proceed () =
@@ -324,11 +282,7 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
                  (correct_levels ty) Layout.value)
       with
       | Ok _ -> ()
-      | Error e ->
-        if e.missing_cmi then
-          raise Missing_cmi_fallback
-        else
-          raise (Error (loc, Non_value_layout (ty, Some e)))
+      | Error e -> raise (Error (loc, Non_value_layout (ty, e)))
   end;
   match get_desc scty with
   | Tconstr(p, _, _) when Path.same p Predef.path_int ->
@@ -357,24 +311,22 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
         let visited = Numbers.Int.Set.add (get_id ty) visited in
         match kind with
         | Type_variant (cstrs, rep) ->
-          fallback_if_missing_cmi (num_nodes_visited, Pgenval) (fun () ->
-            value_kind_variant env ~loc ~visited ~depth ~num_nodes_visited cstrs
-              rep)
+          value_kind_variant env ~loc ~visited ~depth ~num_nodes_visited cstrs rep
         | Type_record (labels, rep) ->
           let depth = depth + 1 in
-          fallback_if_missing_cmi (num_nodes_visited, Pgenval) (fun () ->
-            value_kind_record env ~loc ~visited ~depth ~num_nodes_visited labels
-              rep)
+          value_kind_record env ~loc ~visited ~depth ~num_nodes_visited labels rep
         | Type_abstract {layout} ->
           num_nodes_visited,
           value_kind_of_value_layout layout
         | Type_open -> num_nodes_visited, Pgenval
-    with Not_found -> raise Missing_cmi_fallback
+    with Not_found -> num_nodes_visited, Pgenval
+      (* Safe to assume Pgenval in Not_found case because of the invariant
+         that [value_kind] is only called on types of layout value *)
     end
   | Ttuple fields ->
     if cannot_proceed () then
       num_nodes_visited, Pgenval
-    else fallback_if_missing_cmi (num_nodes_visited, Pgenval) (fun () ->
+    else begin
       let visited = Numbers.Int.Set.add (get_id ty) visited in
       let depth = depth + 1 in
       let num_nodes_visited, fields =
@@ -391,7 +343,8 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
           (num_nodes_visited, []) fields
       in
       num_nodes_visited,
-      Pvariant { consts = []; non_consts = [0, List.rev fields] })
+      Pvariant { consts = []; non_consts = [0, List.rev fields] }
+    end
   | Tvariant row ->
     num_nodes_visited,
     if Ctype.tvariant_not_immediate row then Pgenval else Pintval
@@ -557,15 +510,11 @@ and value_kind_record env ~loc ~visited ~depth ~num_nodes_visited
     end
 
 let value_kind env loc ty =
-  try
-    let (_num_nodes_visited, value_kind) =
-      value_kind env ~loc ~visited:Numbers.Int.Set.empty ~depth:0
-        ~num_nodes_visited:0 ty
-    in
-    value_kind
-  with
-  | Missing_cmi_fallback -> raise (Error (loc, Non_value_layout (ty, None)))
-
+  let (_num_nodes_visited, value_kind) =
+    value_kind env ~loc ~visited:Numbers.Int.Set.empty ~depth:0
+      ~num_nodes_visited:0 ty
+  in
+  value_kind
 
 (* CR layouts v2: We'll have other layouts. Think about what to do with the
    sanity check in value_kind. *)
@@ -639,15 +588,9 @@ let report_error ppf = function
   | Non_value_layout (ty, err) ->
       fprintf ppf
         "Non-value detected in [value_kind].@ Please report this error to \
-         the Jane Street compilers team.";
-      begin match err with
-      | None ->
-        fprintf ppf "@ Could not find cmi for: %a" Printtyp.type_expr ty
-      | Some err ->
-        fprintf ppf "@ %a"
-          (Layout.Violation.report_with_offender
-             ~offender:(fun ppf -> Printtyp.type_expr ppf ty)) err
-      end
+         the Jane Street compilers team.@ %a"
+        (Layout.Violation.report_with_offender
+           ~offender:(fun ppf -> Printtyp.type_expr ppf ty)) err
 
 let () =
   Location.register_error_of_exn
