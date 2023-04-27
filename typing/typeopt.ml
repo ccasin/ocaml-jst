@@ -199,7 +199,17 @@ let value_kind_of_value_layout layout =
 
 (* Invariant: [value_kind] functions may only be called on types with layout
    value. *)
-(* CR layout v5 (and maybe other versions): As we relax the requirement that
+(* CR layouts v1.5: However, the current version allows for it to be called on
+   types whose layouts we can not determine due to missing cmis.  This is
+   unsound once we have non-value layouts.
+
+   For the particularly annoying case where we're missing the cmis for
+   subcomponent of a composite type, we'll need to fall back and return Pgenval
+   for the whole type.  See this commit, which implements that:
+
+   https://github.com/ccasin/ocaml-jst/tree/unboxed-types-v1-layouts-fallback
+*)
+(* CR layouts v5 (and maybe other versions): As we relax the requirement that
    various things have to be values, many recursive calls in [value_kind]
    need to be updated to check layouts. *)
 (* CR layouts v2: At the moment, sort variables may be defaulted to value by
@@ -218,17 +228,6 @@ let value_kind_of_value_layout layout =
    When we eliminate the safety check here, we should think again about where
    and how sort variables are defaulted.
 *)
-(* XXX layouts: refactor this to return an error from recursive calls of
-   non-value detected.  We need to fall back sometimes.  For example, suppose:
-   - module B uses type A.t
-   - A.t = t1 * t2
-   - When we compile B, we're missing the cmi for wherever t2 is defined.
-
-   In this case, there's no good way for value_kind to record the information
-   that A.t is a pair while compiling B.  It's kind would be a block of two
-   things, the second of which we don't know the layout of, and we can't have a
-   block whose length we don't know.  Instead, we'll fall back and just return
-   Pgenval for A.t in B. *)
 let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
   : int * value_kind =
   let[@inline] cannot_proceed () =
@@ -236,23 +235,6 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
     || depth >= 2
     || num_nodes_visited >= 30
   in
-  (* XXX layouts: The error message here is very very bad!  Try running
-
-     ocamlc -I typing -I parsing
-
-     from root of ocaml-jst on this program:
-
-     let res =
-       let s = {| match None with Some (Some _) -> () | _ -> () |} in
-       let pe = Parse.expression (Lexing.from_string s) in
-       let te = Typecore.type_expression (Env.initial_safe_string) pe in
-       let ute = Untypeast.untype_expression te in
-       Format.asprintf "%a" Pprintast.expression ute
-
-     (taken from test suite. -I utils is missing.)
-
-     Check that the error is at least marginally more helpful after
-     Antal/Richard's improvements. *)
   let scty = scrape_ty env ty in
   begin
     (* CR layouts: We want to avoid correcting levels twice, and scrape_ty will
@@ -282,7 +264,11 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
                  (correct_levels ty) Layout.value)
       with
       | Ok _ -> ()
-      | Error e -> raise (Error (loc, Non_value_layout (ty, e)))
+      | Error e ->
+        if e.missing_cmi then
+          () (* CR layouts v1.5: stop allowing missing cmis *)
+        else
+          raise (Error (loc, Non_value_layout (ty, e)))
   end;
   match get_desc scty with
   | Tconstr(p, _, _) when Path.same p Predef.path_int ->
@@ -320,8 +306,7 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
           value_kind_of_value_layout layout
         | Type_open -> num_nodes_visited, Pgenval
     with Not_found -> num_nodes_visited, Pgenval
-      (* Safe to assume Pgenval in Not_found case because of the invariant
-         that [value_kind] is only called on types of layout value *)
+    (* CR layouts v1.5: stop allowing missing cmis. *)
     end
   | Ttuple fields ->
     if cannot_proceed () then
