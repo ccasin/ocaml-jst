@@ -147,7 +147,15 @@ let set extn ~enabled =
     | Incompatible err -> raise (Arg.Bad err)
   end else
     extensions :=
-      List.filter (fun extn' -> not (equal extn extn')) !extensions
+      List.filter (fun extn' ->
+        match extn, extn' with
+        | Layouts _, Layouts _ ->
+          raise (Arg.Bad(Printf.sprintf
+             "Cannot disable extension %s because extension %s is enabled. \
+              Please enable or disable at most one of the layouts extensions."
+             (to_string extn) (to_string extn')))
+        | _, _ -> not (equal extn extn'))
+        !extensions
 
 let enable  = set ~enabled:true
 let disable = set ~enabled:false
