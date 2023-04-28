@@ -99,7 +99,7 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
     | Variant_boxed layouts -> layouts
     | Variant_unboxed layout -> [| [| layout |] |]
   in
-  let all_void layouts = Array.for_all Layout.can_make_void layouts in
+  let all_void layouts = Array.for_all Layout.is_void layouts in
   let num_consts = ref 0 and num_nonconsts = ref 0 in
   let cstr_constant =
     Array.map
@@ -206,7 +206,7 @@ let label_descrs ty_res lbls repres priv =
   let rec describe_labels num pos = function
       [] -> []
     | l :: rest ->
-        let is_void = Layout.can_make_void l.ld_layout  in
+        let is_void = Layout.is_void l.ld_layout  in
         let lbl =
           { lbl_name = Ident.name l.ld_id;
             lbl_res = ty_res;

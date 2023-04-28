@@ -593,8 +593,8 @@ end
     | Const result -> result
     | Var _ -> assert false
 
-  let constrain_default_void = get_defaulting ~default:Sort.Void
-  let can_make_void l = Void = constrain_default_void l
+  let constrain_default_value = get_defaulting ~default:Sort.Value
+  let is_void l = Void = constrain_default_value l
   let default_to_value t =
     ignore (get_defaulting ~default:Value t)
 

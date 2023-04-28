@@ -11,10 +11,6 @@ type t =
   | Immutable_arrays
   | Module_strengthening
   | Layouts of maturity
-(* XXX layouts: do we want sanity checking that the user hasn't, for
-   example, explicitly disabled Layouts but enabled Layouts_beta?  What rules do
-   we want, and where do we do checks like that? Do this as part of the refactor
-   to just have one extension for layouts, with a parameter. *)
 
 (** Equality on language extensions *)
 val equal : t -> t -> bool

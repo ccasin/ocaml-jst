@@ -295,10 +295,11 @@ module Layout : sig
 
   (*********************************)
   (* defaulting *)
-  val constrain_default_void : t -> const
-  val can_make_void : t -> bool
-  (* XXX layouts: make sure uses of these functions have been changed to default
-     to value before releasing. *)
+  val constrain_default_value : t -> const
+  val is_void : t -> bool
+  (* CR layouts v5: When we have proper support for void, we'll want to change
+     things to default to void - it's the most efficient thing when we have a
+     choice. *)
 
   val default_to_value : t -> unit
 
