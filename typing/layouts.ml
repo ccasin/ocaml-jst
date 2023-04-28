@@ -182,8 +182,6 @@ module Layout = struct
     { layout : internal
     ; history : reason list (* events listed in reverse chronological order *)
     }
-    (* XXX ASZ: Add this? *)
-    (* ; creation : creation_reason *)
 
   let fresh_layout layout = { layout; history = [] }
 
@@ -379,7 +377,7 @@ module Layout = struct
             "Found [Dummy_reason_result_ignored] in a [layout] when printing!"
 
     let format_history ~pp_name ~name ppf t =
-      (* XXX ASZ: Restore printing *)
+      (* CR layouts: Re-do this whole facility with a tree structure *)
       if false then begin
       let message ppf = function
         | 0 -> fprintf ppf "%a's layout was constrained" pp_name name
@@ -553,7 +551,7 @@ end
       end
     | (Any _ | Immediate64 | Immediate | Sort _), _ -> false
 
-  (* XXX ASZ: Switch this back to ~allow_mutation:false *)
+  (* CR layouts v2: Switch this back to ~allow_mutation:false *)
   let equal = equate_or_equal ~allow_mutation:true
 
   let equate = equate_or_equal ~allow_mutation:true

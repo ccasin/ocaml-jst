@@ -146,7 +146,7 @@ Line 3, characters 0-15:
 Error:
        s5 has layout value, which is not a sublayout of immediate.
 |}]
-(* XXX layouts: improve error *)
+(* CR layouts v2: improve error, which requires layout histories *)
 
 (* CR layouts: bring [@any] and [@void] bits back here from [basics_alpha.ml] when we allow
    them in beta. *)

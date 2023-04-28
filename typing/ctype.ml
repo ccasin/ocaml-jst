@@ -1981,7 +1981,6 @@ let rec estimate_type_layout env ty =
    (check_coherence).  Maybe that should be implemented differently and this
    shouldn't return a layout on success. *)
 let rec constrain_type_layout ~reason ~fixed env ty layout fuel =
-  (* XXX ASZ: Are all the [~reason]s in this function the same? *)
   let constrain_unboxed ty =
     match estimate_type_layout env ty with
     | Layout ty_layout -> Layout.sub ty_layout layout
@@ -2909,9 +2908,6 @@ let add_layout_equation ~reason env destination layout1 =
      layout, so we're slightly incomplete.  *)
   match intersect_type_layout ~reason !env destination layout1 with
   | Error err -> raise_for Unify (Bad_layout (destination,err))
-  (* XXX layouts: is this the right error to issue here?  It should be reachable
-     by matching on a gadt equation that equates a void thing and a value thing,
-     I think - add a test case. *)
   | Ok layout -> begin
       match get_desc destination with
       | Tconstr (p, _, _) when is_instantiable ~for_layout_eqn:true !env p ->

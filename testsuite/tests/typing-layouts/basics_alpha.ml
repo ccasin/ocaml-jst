@@ -27,11 +27,9 @@ type void_unboxed_record = { vur_void : t_void; } [@@unboxed]
 (*************************************************)
 (* Test 1: Reject non-value function arg/returns *)
 
-(* CJC XXX errors: the F1 and F1' errors should ideally mention that the layout
-   restriction is coming from the function type
-
-   ASZ XXX errors: I think this will be easier when we switch to introducing
-   restrictions on [fun] *)
+(* CR layouts v2: the F1 and F1' errors should ideally mention that the layout
+   restriction is coming from the function type. This may be easier when we
+   switch to introducing restrictions on [fun] *)
 module F1 (X : sig val x : t_void end) = struct
   let f () = X.x
 end;;
@@ -241,7 +239,7 @@ Line 3, characters 0-15:
 Error:
        s5 has layout value, which is not a sublayout of immediate.
 |}]
-(* XXX layouts: improve error *)
+(* CR layouts v2: improve error, which will require layout histories *)
 
 type 'a [@any] t4 = 'a
 and s4 = string t4;;
@@ -1119,3 +1117,37 @@ Error: Non-value detected in [value_kind].
        Please report this error to the Jane Street compilers team.
        'a has layout void, which is not a sublayout of value.
 |}];;
+
+(********************************************************************)
+(* Test 23: checking the error message from impossible GADT matches *)
+
+type (_ [@any], _ [@any]) eq = Refl : ('a, 'a) eq
+
+module M : sig
+  type t_void [@@void]
+  type t_imm [@@immediate]
+end = struct
+  type t_void [@@void]
+  type t_imm [@@immediate]
+end
+(* these are abstract, so the only trouble with unifying them in a GADT
+   match is around their layouts *)
+
+let f (x : (M.t_void, M.t_imm) eq) =
+  match x with
+  | Refl -> ()
+
+[%%expect{|
+type (_ : any, _ : any) eq = Refl : ('a, 'a) eq
+module M : sig type t_void [@@void] type t_imm [@@immediate] end
+Line 15, characters 4-8:
+15 |   | Refl -> ()
+         ^^^^
+Error: This pattern matches values of type (M.t_void, M.t_void) eq
+       but a pattern was expected which matches values of type
+         (M.t_void, M.t_imm) eq
+       M.t_void has layout void, which does not overlap with immediate.
+|}]
+(* CR layouts v2: error message is OK, but it could probably be better.
+   But a similar case without layouts is already pretty bad, so try
+   that before spending too much time here. *)

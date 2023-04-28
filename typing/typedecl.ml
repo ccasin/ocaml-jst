@@ -1452,7 +1452,6 @@ let transl_type_decl env rec_flag sdecl_list =
   List.iter (fun (checks,loc) ->
     List.iter (fun (ty,layout) ->
       match
-        (* XXX ASZ: This [Dummy_reason_result_ignored] worries me *)
         Ctype.constrain_type_layout ~reason:Dummy_reason_result_ignored
           new_env ty layout
       with

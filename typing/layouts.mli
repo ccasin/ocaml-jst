@@ -111,7 +111,6 @@ module Layout : sig
   (******************************)
   (* errors *)
 
-  (* XXX ASZ: Rename to "xxx_layout_context"? *)
   type fixed_layout_reason =
     | Let_binding
     | Function_argument
@@ -121,7 +120,7 @@ module Layout : sig
     | Package_hack
     | Object
     | Instance_variable
-    | Object_field (* XXX ASZ: Is this different than [Instance_variable]? *)
+    | Object_field
     | Class_field
 
   type concrete_layout_reason =
@@ -141,13 +140,12 @@ module Layout : sig
     | Annotated of annotation_location
     | Gadt_equation of Path.t
     | Unified_with_tvar of string option
-        (* XXX ASZ: RAE thinks this will want to take a type, not a tvar name
-           (string option) in case that type gets further unified.  He's
-           probably right but we'll see how errors look. *)
+        (* CR layouts v2: This really needs to carry a type, in case it
+           gets further unified. But that makes layouts recursive with
+           types, which will involve a painful restructuring. Still, RAE
+           thinks it's inevitable. *)
     | V1_safety_check
     | Dummy_reason_result_ignored
-        (* XXX ASZ: Is this the best approach?  Where could we insert a "last
-           resort" check to indicate that we shouldn't be seeing this? *)
 
   module Violation : sig
     type message =
@@ -272,7 +270,7 @@ module Layout : sig
 
       This function ignores the [missing_cmi_for] medatadata for [any]s.
 
-      XXX ASZ: At the moment, this is actually the same as [equate]! *)
+      CR layouts v2: At the moment, this is actually the same as [equate]! Fix. *)
   val equal : t -> t -> bool
 
   (** Finds the intersection of two layouts, constraining sort variables to
