@@ -474,7 +474,7 @@ module Layout = struct
             None
       in
       Option.iter
-        (fprintf ppf "@,Hint: Try adding \"%s\" to your dependencies.")
+        (fprintf ppf "@,Hint: Adding \"%s\" to your dependencies might help.")
         (guess_library_name type_path)
 
     let report_missing_cmi ppf = function

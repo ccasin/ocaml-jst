@@ -5,5 +5,4 @@ Error: This expression has type 'a Foo.t
        but an expression was expected of type ('b : '_representable_layout_1)
        'a Foo.t has layout any, which is not representable.
        No .cmi file found containing Foo.t.
-       Hint: Try adding "foo" to your dependencies.
-       Foo.t is abstract because no corresponding cmi file was found in path.
+       Hint: Adding "foo" to your dependencies might help.
