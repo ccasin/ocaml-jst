@@ -82,7 +82,6 @@ Error: Signature mismatch:
          type ('a : immediate) t = 'a list
        The type ('a : value) is not equal to the type ('a0 : immediate)
        because their layouts are different.
-
 |}]
 
 module M1_2''' : S1_2 = struct
@@ -105,7 +104,6 @@ Error: Signature mismatch:
        Their parameters differ:
        The type ('a : value) is not equal to the type ('a0 : immediate)
        because their layouts are different.
-
 |}]
 
 (************************************************************************)
