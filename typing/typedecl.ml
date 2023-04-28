@@ -216,6 +216,10 @@ let enter_type rec_flag env sdecl (id, uid) =
            Case 1 is accepted and case 2 is rejected, which isn't the end of the
            world, but could perhaps be improved.
         *)
+        (* CR layouts v2: Actually, RAE thinks this is just wrong now, because
+           make_params defaults to a sort variable and this defaults to value.
+           I'm worried that the value here will propagate somewhere and then
+           conflict with an inferred e.g. float64 somewhere. *)
         List.map
           (fun (param, _) ->
              let layout =
